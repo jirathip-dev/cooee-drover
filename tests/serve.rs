@@ -6,7 +6,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 
-const PLUGINS: [&str; 4] = ["queue", "lanes", "asks", "system"];
+const PLUGINS: [&str; 4] = ["queue", "lanes", "asks", "fleets"];
 
 fn token(p: &str) -> String {
     format!("{p}-token-0123456789abcdef")

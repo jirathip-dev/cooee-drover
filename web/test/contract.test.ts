@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { test } from "node:test";
 import { route } from "../src/lib/links.ts";
 import { parseQueue, parseState } from "../src/lib/types.ts";
-import { asksView, lanesView, systemView } from "../src/lib/views.ts";
+import { asksView, lanesView } from "../src/lib/views.ts";
 
 const raw = JSON.parse(fs.readFileSync(new URL("../fixtures/state.json", import.meta.url), "utf8"));
 const state = parseState(raw);
@@ -39,10 +39,4 @@ test("lanes and asks link across tabs, and the link's hash routes back", () => {
   const ask = asksView(state)[0].items[0];
   assert.equal(ask.href, `/p/drover-asks#ask/${raw.asks[0].id}`);
   assert.equal(route("#queue"), null);
-});
-
-test("the system tab shows hosts, services and alerts", () => {
-  const v = systemView(state);
-  assert.deepEqual(v.map((s) => s.title), ["Hosts", "Services", "Alerts"]);
-  assert.equal(v[0].items[0].text, `${raw.hosts[0].name} · ${raw.hosts[0].detail}`);
 });

@@ -1,5 +1,5 @@
 # cooee-drover
-drover plugins for cooee: queue, lanes, asks and system tabs over herdsman /api/v1
+drover plugins for cooee: queue, lanes, asks and fleets tabs over herdsman /api/v1
 
 ## Run
 
@@ -7,7 +7,7 @@ One backend serves the four tabs. Each gets its own token (at least 16 character
 
 ```sh
 HERDSMAN=http://127.0.0.1:7777 DROVER_ADDR=127.0.0.1:4810 \
-DROVER_QUEUE_TOKEN=… DROVER_LANES_TOKEN=… DROVER_ASKS_TOKEN=… DROVER_SYSTEM_TOKEN=… cargo run --release
+DROVER_QUEUE_TOKEN=… DROVER_LANES_TOKEN=… DROVER_ASKS_TOKEN=… DROVER_FLEETS_TOKEN=… cargo run --release
 ```
 
 herdsman takes its paired ops (Drive now, an answer, queueing from the backlog) from a paired device only: set
@@ -23,7 +23,7 @@ label = "Queue"
 url = "http://127.0.0.1:4810"
 module = "/queue.js"
 token = "…"               # = DROVER_QUEUE_TOKEN
-# drover-lanes (/lanes.js), drover-asks (/asks.js), drover-system (/system.js) alike
+# drover-lanes (/lanes.js), drover-asks (/asks.js), drover-fleets (/fleets.js) alike
 ```
 
 The tabs live in `web/` (TypeScript; `npm ci && npm run build` writes the committed `web/dist/`, which the binary

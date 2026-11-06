@@ -1,0 +1,60 @@
+{
+  "seq": 40912,
+  "refresh": false,
+  "list": [
+    {
+      "seq": 40413,
+      "ts": 1793940617,
+      "fleet": "fleet-6",
+      "issue": 3103,
+      "type": "kick",
+      "data": {},
+      "k": null,
+      "glyph": "·",
+      "tone": "m",
+      "text": "text text",
+      "imp": false,
+      "act": "idle",
+      "coat": "",
+      "plain": "plain text",
+      "pr": 3210,
+      "run": null
+    },
+    {
+      "seq": 40414,
+      "ts": 1793940661,
+      "fleet": "fleet-2",
+      "issue": 21,
+      "type": "kick",
+      "data": {},
+      "k": null,
+      "glyph": "·",
+      "tone": "m",
+      "text": "text text",
+      "imp": false,
+      "act": "idle",
+      "coat": "",
+      "plain": "plain text",
+      "pr": null,
+      "run": null
+    },
+    {
+      "seq": 40415,
+      "ts": 1793940671,
+      "fleet": "fleet-6",
+      "issue": 3177,
+      "type": "conflict-predicted",
+      "data": {},
+      "k": null,
+      "glyph": "!",
+      "tone": "a",
+      "text": "text text",
+      "imp": false,
+      "act": "idle",
+      "coat": "",
+      "plain": "plain text",
+      "pr": 3196,
+      "run": null
+    }
+  ]
+}

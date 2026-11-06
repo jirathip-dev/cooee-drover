@@ -225,7 +225,166 @@
         "ago": "4h"
       },
       "config": {
-        "repo": "example/repo"
+        "path": "path text",
+        "file": "fleet.toml",
+        "repo": "example/repo",
+        "local": "local text",
+        "integration": "staging",
+        "effort": null,
+        "color_set": false,
+        "env": [],
+        "node_modules": false,
+        "builtin": true,
+        "review_rounds": 6,
+        "update_rounds": 3,
+        "stall_minutes": 30,
+        "ask_minutes": 30,
+        "max_impl": null,
+        "max_rev": null,
+        "line_cap": null,
+        "serial": [],
+        "deny": [
+          "deny text",
+          "deny text",
+          "deny text"
+        ],
+        "required": [],
+        "merge_label": null,
+        "notify": [],
+        "global": [
+          "global text"
+        ],
+        "pipe": {
+          "bad": [],
+          "builtin": true,
+          "checks": [
+            "rev"
+          ],
+          "fleet": "fleet-1",
+          "into": "staging",
+          "parked": 0,
+          "queued": 0,
+          "required": [],
+          "stages": [
+            {
+              "here": 4,
+              "kind": "build",
+              "line": 0,
+              "loop": "impl",
+              "name": "impl",
+              "next": {
+                "push": "rev"
+              },
+              "role": "impl",
+              "rounds": null,
+              "run": "run text"
+            },
+            {
+              "here": 0,
+              "kind": "check",
+              "line": 0,
+              "loop": "rev",
+              "name": "rev",
+              "next": {
+                "FAIL": "impl",
+                "PASS": "gates"
+              },
+              "role": "rev",
+              "rounds": 6,
+              "run": "run text"
+            },
+            {
+              "here": 0,
+              "kind": "gate",
+              "line": 0,
+              "loop": "rev",
+              "name": "gates",
+              "next": {
+                "ci_red": "impl",
+                "conflict": "impl:update",
+                "ok": "merge"
+              },
+              "role": null,
+              "rounds": 3,
+              "run": null
+            }
+          ]
+        },
+        "models": [],
+        "harnesses": [
+          {
+            "name": "claude",
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ]
+          },
+          {
+            "name": "hermes",
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ]
+          },
+          {
+            "name": "dsh",
+            "efforts": [
+              "none"
+            ]
+          }
+        ],
+        "roles": [
+          {
+            "name": "impl",
+            "profile": "fleet-impl",
+            "harness": "claude",
+            "model": "claude-opus-5-5",
+            "effort": null,
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "model_default": "claude",
+            "effort_default": "none",
+            "accounts": [],
+            "mcp": []
+          },
+          {
+            "name": "rev",
+            "profile": "fleet-rev",
+            "harness": "claude",
+            "model": "claude-sonnet-5-5",
+            "effort": null,
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "model_default": "claude",
+            "effort_default": "none",
+            "accounts": [],
+            "mcp": []
+          }
+        ],
+        "conductor": {
+          "default": true,
+          "profile": "lane-conductor",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "effort": null,
+          "efforts": [
+            "none",
+            "low",
+            "medium"
+          ],
+          "models": [
+            "claude-opus-5-5",
+            "claude-sonnet-5-5"
+          ]
+        }
       }
     },
     {
@@ -406,7 +565,182 @@
         "ago": "2h"
       },
       "config": {
-        "repo": "example/repo"
+        "path": "path text",
+        "file": "fleet.toml",
+        "repo": "example/repo",
+        "local": "local text",
+        "integration": "staging",
+        "effort": null,
+        "color_set": false,
+        "env": [],
+        "node_modules": false,
+        "builtin": true,
+        "review_rounds": 6,
+        "update_rounds": 3,
+        "stall_minutes": 30,
+        "ask_minutes": 30,
+        "max_impl": null,
+        "max_rev": null,
+        "line_cap": null,
+        "serial": [],
+        "deny": [
+          "deny text",
+          "deny text",
+          "deny text"
+        ],
+        "required": [],
+        "merge_label": null,
+        "notify": [],
+        "global": [
+          "global text"
+        ],
+        "pipe": {
+          "bad": [],
+          "builtin": true,
+          "checks": [
+            "rev"
+          ],
+          "fleet": "fleet-2",
+          "into": "staging",
+          "parked": 0,
+          "queued": 7,
+          "required": [],
+          "stages": [
+            {
+              "here": 5,
+              "kind": "build",
+              "line": 0,
+              "loop": "impl",
+              "name": "impl",
+              "next": {
+                "push": "rev"
+              },
+              "role": "impl",
+              "rounds": null,
+              "run": "run text"
+            },
+            {
+              "here": 0,
+              "kind": "check",
+              "line": 0,
+              "loop": "rev",
+              "name": "rev",
+              "next": {
+                "FAIL": "impl",
+                "PASS": "gates"
+              },
+              "role": "rev",
+              "rounds": 6,
+              "run": "run text"
+            },
+            {
+              "here": 0,
+              "kind": "gate",
+              "line": 0,
+              "loop": "rev",
+              "name": "gates",
+              "next": {
+                "ci_red": "impl",
+                "conflict": "impl:update",
+                "ok": "merge"
+              },
+              "role": null,
+              "rounds": 3,
+              "run": null
+            }
+          ]
+        },
+        "models": [],
+        "harnesses": [
+          {
+            "name": "claude",
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ]
+          },
+          {
+            "name": "hermes",
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ]
+          },
+          {
+            "name": "dsh",
+            "efforts": [
+              "none"
+            ]
+          }
+        ],
+        "roles": [
+          {
+            "name": "design",
+            "profile": "fleet-design",
+            "harness": "claude",
+            "model": "claude-opus-5-5",
+            "effort": "high",
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "model_default": "claude",
+            "effort_default": "none",
+            "accounts": [],
+            "mcp": []
+          },
+          {
+            "name": "impl",
+            "profile": "fleet-impl",
+            "harness": "claude",
+            "model": "claude-opus-5-5",
+            "effort": null,
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "model_default": "claude",
+            "effort_default": "none",
+            "accounts": [],
+            "mcp": []
+          },
+          {
+            "name": "rev",
+            "profile": "fleet-rev",
+            "harness": "claude",
+            "model": "claude-sonnet-5-5",
+            "effort": null,
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "model_default": "claude",
+            "effort_default": "none",
+            "accounts": [],
+            "mcp": []
+          }
+        ],
+        "conductor": {
+          "default": true,
+          "profile": "lane-conductor",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "effort": null,
+          "efforts": [
+            "none",
+            "low",
+            "medium"
+          ],
+          "models": [
+            "claude-opus-5-5",
+            "claude-sonnet-5-5"
+          ]
+        }
       }
     },
     {
@@ -589,7 +923,182 @@
       "done_n": 1,
       "backlog": null,
       "config": {
-        "repo": "example/repo"
+        "path": "path text",
+        "file": "fleet.toml",
+        "repo": "example/repo",
+        "local": "local text",
+        "integration": "staging",
+        "effort": null,
+        "color_set": false,
+        "env": [],
+        "node_modules": false,
+        "builtin": true,
+        "review_rounds": 6,
+        "update_rounds": 3,
+        "stall_minutes": 30,
+        "ask_minutes": 30,
+        "max_impl": null,
+        "max_rev": null,
+        "line_cap": null,
+        "serial": [],
+        "deny": [
+          "deny text",
+          "deny text",
+          "deny text"
+        ],
+        "required": [],
+        "merge_label": null,
+        "notify": [],
+        "global": [
+          "global text"
+        ],
+        "pipe": {
+          "bad": [],
+          "builtin": true,
+          "checks": [
+            "rev"
+          ],
+          "fleet": "fleet-3",
+          "into": "staging",
+          "parked": 0,
+          "queued": 3,
+          "required": [],
+          "stages": [
+            {
+              "here": 2,
+              "kind": "build",
+              "line": 0,
+              "loop": "impl",
+              "name": "impl",
+              "next": {
+                "push": "rev"
+              },
+              "role": "impl",
+              "rounds": null,
+              "run": "run text"
+            },
+            {
+              "here": 0,
+              "kind": "check",
+              "line": 0,
+              "loop": "rev",
+              "name": "rev",
+              "next": {
+                "FAIL": "impl",
+                "PASS": "gates"
+              },
+              "role": "rev",
+              "rounds": 6,
+              "run": "run text"
+            },
+            {
+              "here": 0,
+              "kind": "gate",
+              "line": 0,
+              "loop": "rev",
+              "name": "gates",
+              "next": {
+                "ci_red": "impl",
+                "conflict": "impl:update",
+                "ok": "merge"
+              },
+              "role": null,
+              "rounds": 3,
+              "run": null
+            }
+          ]
+        },
+        "models": [],
+        "harnesses": [
+          {
+            "name": "claude",
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ]
+          },
+          {
+            "name": "hermes",
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ]
+          },
+          {
+            "name": "dsh",
+            "efforts": [
+              "none"
+            ]
+          }
+        ],
+        "roles": [
+          {
+            "name": "design",
+            "profile": "fleet-design",
+            "harness": "claude",
+            "model": "claude-opus-5-5",
+            "effort": "high",
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "model_default": "claude",
+            "effort_default": "none",
+            "accounts": [],
+            "mcp": []
+          },
+          {
+            "name": "impl",
+            "profile": "fleet-impl",
+            "harness": "claude",
+            "model": "claude-opus-5-5",
+            "effort": null,
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "model_default": "claude",
+            "effort_default": "none",
+            "accounts": [],
+            "mcp": []
+          },
+          {
+            "name": "rev",
+            "profile": "fleet-rev",
+            "harness": "claude",
+            "model": "claude-sonnet-5-5",
+            "effort": null,
+            "efforts": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "model_default": "claude",
+            "effort_default": "none",
+            "accounts": [],
+            "mcp": []
+          }
+        ],
+        "conductor": {
+          "default": true,
+          "profile": "lane-conductor",
+          "harness": "claude",
+          "model": "claude-opus-5-5",
+          "effort": null,
+          "efforts": [
+            "none",
+            "low",
+            "medium"
+          ],
+          "models": [
+            "claude-opus-5-5",
+            "claude-sonnet-5-5"
+          ]
+        }
       }
     }
   ]
