@@ -3,9 +3,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { route } from "../src/lib/links.ts";
-import { parseQueue, parseState } from "../src/lib/types.ts";
-import { asksView, lanesView, systemView } from "../src/lib/views.ts";
+import { askHref, route } from "../src/lib/links.ts";
+import { parseEvents, parseNeeds, parseQueue, parseState } from "../src/lib/types.ts";
+import { lanesView, systemView } from "../src/lib/views.ts";
 
 const raw = JSON.parse(fs.readFileSync(new URL("../fixtures/state.json", import.meta.url), "utf8"));
 const state = parseState(raw);
@@ -32,12 +32,25 @@ test("the recorded queue fits the contract; a retyped field breaks it, naming it
   assert.throws(() => parseQueue(q), /at fleets\[1\]\.backlog\.issues\.22\.labels$/);
 });
 
+test("the recorded needs and events fit the contract; a retyped field breaks it, naming it", () => {
+  const n = JSON.parse(fs.readFileSync(new URL("../fixtures/needs.json", import.meta.url), "utf8"));
+  assert.ok(parseNeeds(n).asks.length > 0);
+  n.asks[0].pngs = [0];
+  assert.throws(() => parseNeeds(n), /needs broke the contract at asks\[0\]\.pngs\[0\]$/);
+  n.asks[0].pngs = [];
+  n.blocked = [{ name: "l", who: "w", push: false, menu: { title: "t" } }];
+  assert.throws(() => parseNeeds(n), /at blocked\[0\]\.menu\.reason$/);
+  const e = JSON.parse(fs.readFileSync(new URL("../fixtures/events.json", import.meta.url), "utf8"));
+  assert.ok(parseEvents(e).list.length > 0);
+  e.list[0].data = null;
+  assert.throws(() => parseEvents(e), /events broke the contract at list\[0\]\.data$/);
+});
+
 test("lanes and asks link across tabs, and the link's hash routes back", () => {
   const lane = lanesView(state)[0].items[0];
   assert.equal(lane.href, `/p/drover-lanes#lane/${raw.lanes[0].name}`);
   assert.deepEqual(route(lane.href!.slice(lane.href!.indexOf("#"))), { kind: "lane", id: raw.lanes[0].name });
-  const ask = asksView(state)[0].items[0];
-  assert.equal(ask.href, `/p/drover-asks#ask/${raw.asks[0].id}`);
+  assert.equal(askHref(raw.asks[0].id), `/p/drover-asks#ask/${raw.asks[0].id}`);
   assert.equal(route("#queue"), null);
 });
 
