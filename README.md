@@ -10,6 +10,10 @@ HERDSMAN=http://127.0.0.1:7777 DROVER_ADDR=127.0.0.1:4810 \
 DROVER_QUEUE_TOKEN=… DROVER_LANES_TOKEN=… DROVER_ASKS_TOKEN=… DROVER_SYSTEM_TOKEN=… cargo run --release
 ```
 
+herdsman takes its paired ops (Drive now, an answer, queueing from the backlog) from a paired device only: set
+`HERDSMAN_COOKIE` to a paired device's cookie (`hd=…`, from a browser paired with `Pair this phone` on herdsman's board) and the
+backend sends it with every call. Without it those taps answer `UNPAIRED`.
+
 In cooee's `config.toml`, one entry per tab, all on the same `url`, each with its own module and token:
 
 ```toml

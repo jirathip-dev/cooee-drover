@@ -5,11 +5,6 @@ import type { Row, State } from "./types.ts";
 export type Item = { text: string; tone?: string; href?: string };
 export type Section = { title: string; items: Item[] };
 
-/** drover-queue: the fleets herdsman runs (the hello tab). */
-export const queueView = (s: State): Section[] => [
-  { title: "Fleets", items: s.fleets.map((f) => (f.paused ? { text: `${f.name} · paused`, tone: "m" } : { text: f.name })) },
-];
-
 /** drover-lanes: each lane, as its Lanes row says it. */
 export const lanesView = (s: State): Section[] => [
   { title: "Lanes", items: s.lanes.map((l) => ({ text: `${l.name} · ${l.shown}`, tone: l.tone, href: laneHref(l.name) })) },

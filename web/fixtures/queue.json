@@ -1,0 +1,596 @@
+{
+  "now": 1793933574,
+  "rw": true,
+  "live": true,
+  "mtime": "mtime text",
+  "error": null,
+  "fleets": [
+    {
+      "name": "fleet-1",
+      "k": "c",
+      "serial": [],
+      "paths": [],
+      "need": 0,
+      "paused": null,
+      "drive": {
+        "tone": "m",
+        "line": "line text",
+        "meta": [
+          "meta text",
+          "meta text"
+        ],
+        "pass": true,
+        "acts": [
+          {
+            "who": "#30",
+            "words": "words text",
+            "code": "code text"
+          }
+        ]
+      },
+      "notes": [],
+      "rows": [
+        {
+          "issue": 32,
+          "state": "impl",
+          "tone": "a",
+          "age": "4m",
+          "t": 1793933312,
+          "act": "impl",
+          "grow": "impl",
+          "coat": "--rc:#a05c2c;--rd:#7d4520;--rm:#5d3317;--rb:#efe7dc",
+          "queued": true,
+          "check": false,
+          "groups": [],
+          "blocked_by": null,
+          "title": "title text",
+          "stage": [
+            {
+              "name": "impl",
+              "k": "b",
+              "g": "▲",
+              "at": 0,
+              "ok": false
+            },
+            {
+              "name": "rev",
+              "k": "c",
+              "g": "◆",
+              "at": 1,
+              "ok": false
+            },
+            {
+              "name": "gates",
+              "k": "g",
+              "g": "◫",
+              "at": 1,
+              "ok": false
+            }
+          ],
+          "lane": "fleet-1-impl-32",
+          "live": true,
+          "pr": {
+            "pr": null,
+            "run": null,
+            "ci": null,
+            "verdict": null,
+            "vtone": "",
+            "rounds": 0,
+            "form": null
+          },
+          "dead": false,
+          "notes": [],
+          "decided": null,
+          "ask": null,
+          "open": null,
+          "mv": true,
+          "up": null,
+          "down": 22,
+          "lanes": [
+            {
+              "name": "fleet-1-impl-32",
+              "state": "working",
+              "tone": "g",
+              "ago": "4m",
+              "link": "live"
+            }
+          ]
+        },
+        {
+          "issue": 22,
+          "state": "dead",
+          "tone": "r",
+          "age": "5m",
+          "t": 1793933249,
+          "act": "blocked",
+          "grow": "blocked",
+          "coat": "--rc:#c89a56;--rd:#a37a3c;--rm:#e8dcc0;--rb:#efe7dc",
+          "queued": true,
+          "check": false,
+          "groups": [],
+          "blocked_by": null,
+          "title": "title text",
+          "stage": [
+            {
+              "name": "impl · fix",
+              "k": "b",
+              "g": "▲",
+              "at": 0,
+              "ok": false
+            },
+            {
+              "name": "rev",
+              "k": "c",
+              "g": "◆",
+              "at": 1,
+              "ok": false
+            },
+            {
+              "name": "gates",
+              "k": "g",
+              "g": "◫",
+              "at": 1,
+              "ok": false
+            }
+          ],
+          "lane": "fleet-1-impl-22",
+          "live": true,
+          "pr": {
+            "pr": null,
+            "run": null,
+            "ci": null,
+            "verdict": null,
+            "vtone": "",
+            "rounds": 0,
+            "form": null
+          },
+          "dead": true,
+          "notes": [],
+          "decided": null,
+          "ask": null,
+          "open": null,
+          "mv": false,
+          "up": null,
+          "down": null,
+          "lanes": [
+            {
+              "name": "fleet-1-impl-22",
+              "state": "dead",
+              "tone": "r",
+              "ago": "21h",
+              "link": "live"
+            }
+          ]
+        },
+        {
+          "issue": 30,
+          "state": "queued",
+          "tone": "a",
+          "age": "",
+          "t": 0,
+          "act": "idle",
+          "grow": "queued",
+          "coat": "",
+          "queued": true,
+          "check": false,
+          "groups": [],
+          "blocked_by": null,
+          "title": "title text",
+          "stage": [],
+          "lane": "",
+          "live": false,
+          "pr": {
+            "pr": null,
+            "run": null,
+            "ci": null,
+            "verdict": null,
+            "vtone": "",
+            "rounds": 0,
+            "form": null
+          },
+          "dead": false,
+          "notes": [],
+          "decided": null,
+          "ask": null,
+          "open": null,
+          "mv": true,
+          "up": 22,
+          "down": 31,
+          "lanes": []
+        }
+      ],
+      "done": [
+        {
+          "issue": 28,
+          "note": "note text",
+          "age": "48m",
+          "pr": null
+        },
+        {
+          "issue": 27,
+          "note": "note text",
+          "age": "6h",
+          "pr": "29"
+        },
+        {
+          "issue": 25,
+          "note": "note text",
+          "age": "14h",
+          "pr": "26"
+        }
+      ],
+      "done_n": 4,
+      "backlog": {
+        "issues": {},
+        "ago": "4h"
+      },
+      "config": {
+        "repo": "example/repo"
+      }
+    },
+    {
+      "name": "fleet-2",
+      "k": "a",
+      "serial": [],
+      "paths": [],
+      "need": 0,
+      "paused": null,
+      "drive": {
+        "tone": "m",
+        "line": "line text",
+        "meta": [
+          "meta text"
+        ],
+        "pass": true,
+        "acts": [
+          {
+            "who": "#25",
+            "words": "words text",
+            "code": "code text"
+          }
+        ]
+      },
+      "notes": [],
+      "rows": [
+        {
+          "issue": 26,
+          "state": "queued",
+          "tone": "a",
+          "age": "",
+          "t": 1793933574,
+          "act": "idle",
+          "grow": "queued",
+          "coat": "",
+          "queued": true,
+          "check": false,
+          "groups": [],
+          "blocked_by": 25,
+          "title": "title text",
+          "stage": [],
+          "lane": "",
+          "live": false,
+          "pr": {
+            "pr": null,
+            "run": null,
+            "ci": null,
+            "verdict": null,
+            "vtone": "",
+            "rounds": 0,
+            "form": null
+          },
+          "dead": false,
+          "notes": [],
+          "decided": null,
+          "ask": null,
+          "open": null,
+          "mv": true,
+          "up": null,
+          "down": 25,
+          "lanes": []
+        },
+        {
+          "issue": 25,
+          "state": "queued",
+          "tone": "a",
+          "age": "",
+          "t": 0,
+          "act": "idle",
+          "grow": "queued",
+          "coat": "",
+          "queued": true,
+          "check": false,
+          "groups": [],
+          "blocked_by": null,
+          "title": "title text",
+          "stage": [],
+          "lane": "",
+          "live": false,
+          "pr": {
+            "pr": null,
+            "run": null,
+            "ci": null,
+            "verdict": null,
+            "vtone": "",
+            "rounds": 0,
+            "form": null
+          },
+          "dead": false,
+          "notes": [],
+          "decided": null,
+          "ask": null,
+          "open": null,
+          "mv": true,
+          "up": 26,
+          "down": 9,
+          "lanes": []
+        },
+        {
+          "issue": 9,
+          "state": "parked",
+          "tone": "m",
+          "age": "11h",
+          "t": 1793891170,
+          "act": "idle",
+          "grow": "impl",
+          "coat": "--rc:#8a5a33;--rd:#6f4527;--rm:#2e2019;--rb:transparent",
+          "queued": true,
+          "check": false,
+          "groups": [],
+          "blocked_by": null,
+          "title": "title text",
+          "stage": [],
+          "lane": "fleet-2-impl-9",
+          "live": true,
+          "pr": {
+            "pr": null,
+            "run": null,
+            "ci": null,
+            "verdict": null,
+            "vtone": "",
+            "rounds": 0,
+            "form": null
+          },
+          "dead": false,
+          "notes": [],
+          "decided": null,
+          "ask": null,
+          "open": null,
+          "mv": true,
+          "up": 25,
+          "down": 21,
+          "lanes": [
+            {
+              "name": "fleet-2-impl-9",
+              "state": "done",
+              "tone": "g",
+              "ago": "12h",
+              "link": "live"
+            }
+          ]
+        }
+      ],
+      "done": [
+        {
+          "issue": 20,
+          "note": "note text",
+          "age": "58m",
+          "pr": "23"
+        },
+        {
+          "issue": 5,
+          "note": "note text",
+          "age": "114m",
+          "pr": "18"
+        },
+        {
+          "issue": 6,
+          "note": "note text",
+          "age": "4h",
+          "pr": "19"
+        }
+      ],
+      "done_n": 10,
+      "backlog": {
+        "issues": {
+          "22": {
+            "number": 22,
+            "title": "title text",
+            "state": "OPEN",
+            "created": "2026-11-06T00:18:23Z",
+            "updated": "2026-11-06T00:18:23Z",
+            "labels": [],
+            "ac": true,
+            "pr": false
+          }
+        },
+        "ago": "2h"
+      },
+      "config": {
+        "repo": "example/repo"
+      }
+    },
+    {
+      "name": "fleet-3",
+      "k": "p",
+      "serial": [],
+      "paths": [],
+      "need": 0,
+      "paused": null,
+      "drive": {
+        "tone": "m",
+        "line": "line text",
+        "meta": [
+          "meta text",
+          "meta text"
+        ],
+        "pass": true,
+        "acts": [
+          {
+            "who": "#1",
+            "words": "words text",
+            "code": "code text"
+          },
+          {
+            "who": "#1",
+            "words": "words text",
+            "code": "code text"
+          }
+        ]
+      },
+      "notes": [],
+      "rows": [
+        {
+          "issue": 2,
+          "state": "impl",
+          "tone": "a",
+          "age": "2m",
+          "t": 1793933407,
+          "act": "impl",
+          "grow": "impl",
+          "coat": "--rc:#b08d5e;--rd:#8e6f45;--rm:#41321f;--rb:#efe7dc",
+          "queued": true,
+          "check": false,
+          "groups": [],
+          "blocked_by": null,
+          "title": "title text",
+          "stage": [
+            {
+              "name": "impl",
+              "k": "b",
+              "g": "▲",
+              "at": 0,
+              "ok": false
+            },
+            {
+              "name": "rev",
+              "k": "c",
+              "g": "◆",
+              "at": 1,
+              "ok": false
+            },
+            {
+              "name": "gates",
+              "k": "g",
+              "g": "◫",
+              "at": 1,
+              "ok": false
+            }
+          ],
+          "lane": "fleet-3-impl-2",
+          "live": true,
+          "pr": {
+            "pr": null,
+            "run": null,
+            "ci": null,
+            "verdict": null,
+            "vtone": "",
+            "rounds": 0,
+            "form": null
+          },
+          "dead": false,
+          "notes": [],
+          "decided": null,
+          "ask": null,
+          "open": null,
+          "mv": true,
+          "up": null,
+          "down": 3,
+          "lanes": [
+            {
+              "name": "fleet-3-impl-2",
+              "state": "working",
+              "tone": "g",
+              "ago": "2m",
+              "link": "live"
+            }
+          ]
+        },
+        {
+          "issue": 3,
+          "state": "queued",
+          "tone": "a",
+          "age": "",
+          "t": 0,
+          "act": "idle",
+          "grow": "queued",
+          "coat": "",
+          "queued": true,
+          "check": false,
+          "groups": [],
+          "blocked_by": null,
+          "title": "title text",
+          "stage": [],
+          "lane": "",
+          "live": false,
+          "pr": {
+            "pr": null,
+            "run": null,
+            "ci": null,
+            "verdict": null,
+            "vtone": "",
+            "rounds": 0,
+            "form": null
+          },
+          "dead": false,
+          "notes": [],
+          "decided": null,
+          "ask": null,
+          "open": null,
+          "mv": true,
+          "up": 2,
+          "down": 4,
+          "lanes": []
+        },
+        {
+          "issue": 4,
+          "state": "queued",
+          "tone": "a",
+          "age": "",
+          "t": 0,
+          "act": "idle",
+          "grow": "queued",
+          "coat": "",
+          "queued": true,
+          "check": false,
+          "groups": [],
+          "blocked_by": null,
+          "title": "title text",
+          "stage": [],
+          "lane": "",
+          "live": false,
+          "pr": {
+            "pr": null,
+            "run": null,
+            "ci": null,
+            "verdict": null,
+            "vtone": "",
+            "rounds": 0,
+            "form": null
+          },
+          "dead": false,
+          "notes": [],
+          "decided": null,
+          "ask": null,
+          "open": null,
+          "mv": true,
+          "up": 3,
+          "down": 5,
+          "lanes": []
+        }
+      ],
+      "done": [
+        {
+          "issue": 1,
+          "note": "note text",
+          "age": "55m",
+          "pr": "6"
+        }
+      ],
+      "done_n": 1,
+      "backlog": null,
+      "config": {
+        "repo": "example/repo"
+      }
+    }
+  ]
+}

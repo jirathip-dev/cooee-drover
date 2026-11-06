@@ -1,10 +1,12 @@
 //! `cooee-drover`: one backend for drover's four cooee plugins (cooee docs/plugins.md). It serves each plugin's UI
 //! module (`/queue.js`, `/lanes.js`, `/asks.js`, `/system.js`) to that plugin's bearer token only, and forwards
-//! `GET /api/v1/*` (JSON or the SSE event stream) to herdsman for any of them. It never reads herdsman's files.
+//! `GET /api/v1/*` (JSON or the SSE event stream) and `POST /api/v1/<op>` (a form op) to herdsman for any of them.
+//! It never reads herdsman's files.
 //!
 //! Configuration is the environment: `DROVER_ADDR` (default `127.0.0.1:4810`), `HERDSMAN` (herdsman's base URL,
-//! default `http://127.0.0.1:7777`) and a token per plugin, `DROVER_<QUEUE|LANES|ASKS|SYSTEM>_TOKEN`; a plugin
-//! without one is not served.
+//! default `http://127.0.0.1:7777`), a token per plugin, `DROVER_<QUEUE|LANES|ASKS|SYSTEM>_TOKEN` (a plugin without
+//! one is not served), and `HERDSMAN_COOKIE`, a paired device's cookie herdsman wants for its paired ops (drive,
+//! answer, bqueue, …).
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
@@ -20,6 +22,7 @@ const PLUGINS: [(&str, &str); 4] = [
 
 struct Config {
     herdsman: String,
+    cookie: Option<String>,
     tokens: Vec<(&'static str, String)>,
 }
 
@@ -35,7 +38,12 @@ fn main() {
             ))
         })
         .collect();
-    let cfg = Config { herdsman, tokens };
+    let cookie = env::var("HERDSMAN_COOKIE").ok();
+    let cfg = Config {
+        herdsman,
+        cookie,
+        tokens,
+    };
     if let Err(e) = cfg.check().and_then(|()| serve(&cfg, &addr)) {
         eprintln!("cooee-drover: {e}");
         process::exit(1);
@@ -99,7 +107,7 @@ fn serve(cfg: &Config, addr: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// One request (cooee calls over HTTP/1.0, one connection each): the head only; every route is a GET.
+/// One request (cooee calls over HTTP/1.0, one connection each): a GET, or a POST to `/api/v1/` with its body.
 fn handle(cfg: &Config, mut c: TcpStream) -> io::Result<()> {
     c.set_read_timeout(Some(Duration::from_secs(10)))?;
     let mut head = Vec::new();
@@ -125,17 +133,34 @@ fn handle(cfg: &Config, mut c: TcpStream) -> io::Result<()> {
     let Some(plugin) = header("authorization").and_then(|a| cfg.plugin(a)) else {
         return reply(&mut c, "401 Unauthorized", "text/plain", "no token");
     };
-    if method != "GET" {
-        return reply(&mut c, "405 Method Not Allowed", "text/plain", "GET only");
-    }
-    if path.starts_with("/api/v1/") {
-        let pass = ["accept", "last-event-id"].map(|k| header(k).map(|v| format!("{k}: {v}\r\n")));
-        return forward(
-            &cfg.herdsman,
-            path,
-            &pass.into_iter().flatten().collect::<String>(),
+    let api = path.starts_with("/api/v1/");
+    if method != "GET" && !(method == "POST" && api) {
+        return reply(
             &mut c,
+            "405 Method Not Allowed",
+            "text/plain",
+            "GET, or POST to /api/v1/",
         );
+    }
+    if api {
+        let mut body = Vec::new();
+        if method == "POST" {
+            let n = header("content-length").and_then(|n| n.parse::<u64>().ok());
+            r.into_inner()
+                .take(n.unwrap_or(0).min(64 * 1024))
+                .read_to_end(&mut body)?;
+        }
+        let len = (method == "POST").then(|| body.len().to_string());
+        let pass: String = ["accept", "last-event-id", "content-type"]
+            .map(|k| (k, header(k)))
+            .into_iter()
+            .chain([
+                ("cookie", cfg.cookie.as_deref()),
+                ("content-length", len.as_deref()),
+            ])
+            .filter_map(|(k, v)| Some(format!("{k}: {}\r\n", v?)))
+            .collect();
+        return forward(&cfg.herdsman, method, path, &pass, &body, &mut c);
     }
     match PLUGINS
         .iter()
@@ -160,8 +185,16 @@ fn reply(c: &mut TcpStream, status: &str, kind: &str, body: &str) -> io::Result<
     )
 }
 
-/// `path` on herdsman over HTTP/1.0, its whole answer (status, headers, body or event stream) copied back as it comes.
-fn forward(base: &str, path: &str, pass: &str, c: &mut TcpStream) -> io::Result<()> {
+/// `method path` on herdsman over HTTP/1.0, its whole answer (status, headers, body or event stream) copied back as
+/// it comes.
+fn forward(
+    base: &str,
+    method: &str,
+    path: &str,
+    pass: &str,
+    body: &[u8],
+    c: &mut TcpStream,
+) -> io::Result<()> {
     let host = base
         .trim_start_matches("http://")
         .split('/')
@@ -180,6 +213,7 @@ fn forward(base: &str, path: &str, pass: &str, c: &mut TcpStream) -> io::Result<
             "herdsman is unreachable",
         );
     };
-    write!(up, "GET {path} HTTP/1.0\r\nHost: {host}\r\n{pass}\r\n")?;
+    write!(up, "{method} {path} HTTP/1.0\r\nHost: {host}\r\n{pass}\r\n")?;
+    up.write_all(body)?;
     io::copy(&mut up, c).map(drop)
 }
