@@ -1,5 +1,9 @@
-// The drover-asks tab (cooee plugin module).
-import { tab } from "./lib/tab.ts";
-import { asksView } from "./lib/views.ts";
+// The drover-asks tab (cooee plugin module): the needs-you cards drawn in cooee's theme, read again every 15 s; a
+// permission prompt's countdown ticks each second.
+import { asksTab, CSS } from "./lib/asks.ts";
+import { mount } from "./lib/dom.ts";
 
-tab(asksView);
+const t = asksTab((kids) => mount(kids, CSS));
+t.load();
+setInterval(t.tick, 1000);
+setInterval(t.load, 15000);

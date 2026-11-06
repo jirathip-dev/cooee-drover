@@ -7,6 +7,11 @@
 //! default `http://127.0.0.1:7777`), a token per plugin, `DROVER_<QUEUE|LANES|ASKS|FLEETS>_TOKEN` (a plugin without
 //! one is not served), and `HERDSMAN_COOKIE`, a paired device's cookie herdsman wants for its paired ops (drive,
 //! answer, bqueue, …).
+//!
+//! #412 #417: `GET /design/<fleet>/<n>/<i>` and `/shot/<fleet>/<n>/<i>` (a design's PNG, a verdict's screenshot) come
+//! back as `data:image/png;base64,…` text: the plugin frame shows `data:` images only, and `cooee.fetch` passes text.
+//! #143: with `COOEE` (cooee's base URL) set, herdsman's new `answer-undelivered` events are each pushed through cooee
+//! with the asks plugin's token, read every `DROVER_POLL_SECS` (default 30).
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
@@ -20,6 +25,7 @@ const PLUGINS: [(&str, &str); 4] = [
     ("fleets", include_str!("../web/dist/fleets.js")),
 ];
 
+#[derive(Clone)]
 struct Config {
     herdsman: String,
     cookie: Option<String>,
@@ -44,7 +50,20 @@ fn main() {
         cookie,
         tokens,
     };
-    if let Err(e) = cfg.check().and_then(|()| serve(&cfg, &addr)) {
+    let poll = env::var("DROVER_POLL_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
+    let run = || {
+        cfg.check()?;
+        let asks = cfg.tokens.iter().find(|(p, _)| *p == "asks");
+        if let (Ok(cooee), Some((_, token))) = (env::var("COOEE"), asks) {
+            let (cfg, token) = (cfg.clone(), token.clone());
+            thread::spawn(move || undelivered(&cfg, &cooee, &token, poll));
+        }
+        serve(&cfg, &addr)
+    };
+    if let Err(e) = run() {
         eprintln!("cooee-drover: {e}");
         process::exit(1);
     }
@@ -78,6 +97,14 @@ impl Config {
             }
         }
         Ok(())
+    }
+
+    /// The paired device's cookie as a request header line, if one is set.
+    fn cookie_line(&self) -> String {
+        self.cookie
+            .as_ref()
+            .map(|c| format!("cookie: {c}\r\n"))
+            .unwrap_or_default()
     }
 
     /// The plugin whose token `auth` (an `Authorization` value) carries.
@@ -134,6 +161,19 @@ fn handle(cfg: &Config, mut c: TcpStream) -> io::Result<()> {
         return reply(&mut c, "401 Unauthorized", "text/plain", "no token");
     };
     let api = path.starts_with("/api/v1/");
+    let cookie = cfg.cookie_line();
+    if method == "GET" && (path.starts_with("/design/") || path.starts_with("/shot/")) {
+        let mut out = Vec::new();
+        forward(&cfg.herdsman, "GET", path, &cookie, &[], &mut out)?;
+        let pos = out.windows(4).position(|w| w == b"\r\n\r\n");
+        return match pos.filter(|_| out.split(|b| *b == b' ').nth(1) == Some(b"200")) {
+            Some(i) => {
+                let png = format!("data:image/png;base64,{}", base64(&out[i + 4..]));
+                reply(&mut c, "200 OK", "text/plain", &png)
+            }
+            None => reply(&mut c, "404 Not Found", "text/plain", "no such image"),
+        };
+    }
     if method != "GET" && !(method == "POST" && api) {
         return reply(
             &mut c,
@@ -177,7 +217,7 @@ fn handle(cfg: &Config, mut c: TcpStream) -> io::Result<()> {
     }
 }
 
-fn reply(c: &mut TcpStream, status: &str, kind: &str, body: &str) -> io::Result<()> {
+fn reply(c: &mut impl Write, status: &str, kind: &str, body: &str) -> io::Result<()> {
     let n = body.len();
     write!(
         c,
@@ -193,7 +233,7 @@ fn forward(
     path: &str,
     pass: &str,
     body: &[u8],
-    c: &mut TcpStream,
+    c: &mut impl Write,
 ) -> io::Result<()> {
     let host = base
         .trim_start_matches("http://")
@@ -216,4 +256,72 @@ fn forward(
     write!(up, "{method} {path} HTTP/1.0\r\nHost: {host}\r\n{pass}\r\n")?;
     up.write_all(body)?;
     io::copy(&mut up, c).map(drop)
+}
+
+fn base64(b: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    b.chunks(3)
+        .flat_map(|c| {
+            let n = c
+                .iter()
+                .enumerate()
+                .fold(0, |n, (i, &x)| n | (usize::from(x) << (16 - 8 * i)));
+            (0..4).map(move |i| {
+                if i <= c.len() {
+                    char::from(A[(n >> (18 - 6 * i)) & 63])
+                } else {
+                    '='
+                }
+            })
+        })
+        .collect()
+}
+
+/// The raw JSON string literal (quotes and escapes kept) at `"key":` in `json`.
+fn literal<'a>(json: &'a str, key: &str) -> Option<&'a str> {
+    let at = json.find(&format!("\"{key}\":\""))? + key.len() + 3;
+    let mut esc = false;
+    let end = json[at + 1..].find(|ch| {
+        let close = ch == '"' && !esc;
+        esc = ch == '\\' && !esc;
+        close
+    })?;
+    Some(&json[at..at + end + 2])
+}
+
+/// #143: herdsman's events after the newest seen, every `secs`; each `answer-undelivered` one (its `plain` line) is a
+/// cooee push that opens the Asks tab. The first read only finds where the log is.
+fn undelivered(cfg: &Config, cooee: &str, token: &str, secs: u64) {
+    let cookie = cfg.cookie_line();
+    let mut since = None;
+    loop {
+        let mut out = Vec::new();
+        let path = format!("/api/v1/events?since={}", since.unwrap_or(0));
+        let _ = forward(&cfg.herdsman, "GET", &path, &cookie, &[], &mut out);
+        let text = String::from_utf8_lossy(&out);
+        // An event's object starts with `{"seq":` (a string's quote is escaped); the first is the answer's own.
+        let mut objs = text.split("{\"seq\":").skip(1);
+        let top = objs
+            .next()
+            .and_then(|s| s.split(',').next()?.parse::<u64>().ok());
+        for e in objs.filter(|e| since.is_some() && e.contains("\"type\":\"answer-undelivered\"")) {
+            if let Some(line) = literal(e, "plain") {
+                let body = format!(r#"{{"text":{line},"path":"undelivered"}}"#);
+                let head = format!(
+                    "Authorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
+                    body.len()
+                );
+                let _ = forward(
+                    cooee,
+                    "POST",
+                    "/plugin/push",
+                    &head,
+                    body.as_bytes(),
+                    &mut Vec::new(),
+                );
+            }
+        }
+        since = top.or(since);
+        thread::sleep(Duration::from_secs(secs));
+    }
 }

@@ -14,6 +14,10 @@ herdsman takes its paired ops (Drive now, an answer, queueing from the backlog) 
 `HERDSMAN_COOKIE` to a paired device's cookie (`hd=…`, from a browser paired with `Pair this phone` on herdsman's board) and the
 backend sends it with every call. Without it those taps answer `UNPAIRED`.
 
+The Asks tab's alert for an answer herdsman couldn't deliver to its lane is also a push to your phone: set `COOEE` to
+cooee's URL (e.g. `COOEE=http://127.0.0.1:4747`) and the backend reads herdsman's events every 30 s
+(`DROVER_POLL_SECS`), pushing each new `answer-undelivered` through cooee with the asks plugin's token.
+
 In cooee's `config.toml`, one entry per tab, all on the same `url`, each with its own module and token:
 
 ```toml

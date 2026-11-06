@@ -254,3 +254,122 @@ fn a_short_or_shared_token_or_none_refuses_to_start() {
     assert_eq!(code, Some(1), "{err}");
     assert!(err.contains("another plugin's token"), "{err}");
 }
+
+#[test]
+fn a_design_png_comes_back_as_a_data_url_and_a_missing_one_as_404() {
+    let png: &[u8] = &[0x89, b'P', b'N', b'G', 0, 0xff, 1];
+    let (url, seen) = herdsman(move |c| {
+        write!(
+            c,
+            "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\n\r\n",
+            png.len()
+        )
+        .unwrap();
+        c.write_all(png).unwrap();
+    });
+    let d = drover_with(&url, &[("HERDSMAN_COOKIE", "hd=paired-device")]);
+    let (status, body) = get(&d.1, "/design/fleet-1/4/0", Some(&token("asks")));
+    assert_eq!(status, "HTTP/1.0 200 OK");
+    assert_eq!(body, "data:image/png;base64,iVBORwD/AQ==");
+    let head = seen.recv().unwrap();
+    assert!(
+        head.starts_with("GET /design/fleet-1/4/0 HTTP/1.0\r\n"),
+        "{head}"
+    );
+    assert!(head.contains("cookie: hd=paired-device\r\n"), "{head}");
+
+    let (url, _seen) = herdsman(|c| {
+        c.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 19\r\n\r\nno such screenshot\n")
+            .unwrap();
+    });
+    let d = drover(&url);
+    assert_eq!(
+        get(&d.1, "/shot/fleet-1/4/9", Some(&token("asks"))).0,
+        "HTTP/1.0 404 Not Found"
+    );
+}
+
+/// A fake server answering `answers` in turn, one connection each; each request it saw comes back on the channel.
+fn replies(answers: Vec<String>) -> (String, mpsc::Receiver<String>) {
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", l.local_addr().unwrap());
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        for a in answers {
+            let (mut c, _) = l.accept().unwrap();
+            let mut r = BufReader::new(c.try_clone().unwrap());
+            let mut head = String::new();
+            while r.read_line(&mut head).unwrap() > 2 {}
+            let n = head
+                .lines()
+                .find_map(|l| {
+                    l.to_ascii_lowercase()
+                        .strip_prefix("content-length: ")
+                        .map(|n| n.parse().unwrap())
+                })
+                .unwrap_or(0);
+            let mut body = vec![0; n];
+            r.read_exact(&mut body).unwrap();
+            let _ = tx.send(head + &String::from_utf8(body).unwrap());
+            write!(
+                c,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{a}",
+                a.len()
+            )
+            .unwrap();
+        }
+    });
+    (url, rx)
+}
+
+#[test]
+fn an_undelivered_answer_after_start_is_pushed_through_cooee() {
+    let ev = |seq: u32, kind: &str, plain: &str| {
+        format!(
+            r#"{{"seq":{seq},"ts":1,"fleet":"f","issue":4,"type":"{kind}","data":{{"id":"q1","reason":"lane gone"}},"text":"x","plain":"{plain}"}}"#
+        )
+    };
+    let old = ev(3, "answer-undelivered", "an old one");
+    let new = [
+        ev(6, "answer-delivered", "f #4 answer-delivered: "),
+        ev(
+            7,
+            "answer-undelivered",
+            r#"f #4 answer-undelivered: \"q1\" lane gone"#,
+        ),
+    ];
+    let (cooee, pushed) = replies(vec![r#"{"ok":true}"#.into()]);
+    let (url, seen) = replies(vec![
+        format!(r#"{{"seq":5,"refresh":false,"list":[{old}]}}"#),
+        format!(r#"{{"seq":7,"refresh":false,"list":[{}]}}"#, new.join(",")),
+    ]);
+    let _d = drover_with(&url, &[("COOEE", &cooee), ("DROVER_POLL_SECS", "0")]);
+    assert!(
+        seen.recv()
+            .unwrap()
+            .starts_with("GET /api/v1/events?since=0 HTTP/1.0\r\n")
+    );
+    assert!(
+        seen.recv()
+            .unwrap()
+            .starts_with("GET /api/v1/events?since=5 HTTP/1.0\r\n")
+    );
+    let push = pushed.recv().unwrap();
+    assert!(push.starts_with("POST /plugin/push HTTP/1.0\r\n"), "{push}");
+    assert!(
+        push.contains(&format!("Authorization: Bearer {}\r\n", token("asks"))),
+        "{push}"
+    );
+    assert!(
+        push.ends_with(
+            r#"{"text":"f #4 answer-undelivered: \"q1\" lane gone","path":"undelivered"}"#
+        ),
+        "only the new undelivered one, its line as herdsman words it: {push}"
+    );
+    assert!(
+        pushed
+            .recv_timeout(std::time::Duration::from_millis(300))
+            .is_err(),
+        "pushed once"
+    );
+}
