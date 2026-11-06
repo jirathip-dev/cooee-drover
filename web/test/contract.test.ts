@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { test } from "node:test";
 import { askHref, route } from "../src/lib/links.ts";
 import { parseEvents, parseNeeds, parseQueue, parseState } from "../src/lib/types.ts";
-import { lanesView, systemView } from "../src/lib/views.ts";
+import { lanesView } from "../src/lib/views.ts";
 
 const raw = JSON.parse(fs.readFileSync(new URL("../fixtures/state.json", import.meta.url), "utf8"));
 const state = parseState(raw);
@@ -52,10 +52,4 @@ test("lanes and asks link across tabs, and the link's hash routes back", () => {
   assert.deepEqual(route(lane.href!.slice(lane.href!.indexOf("#"))), { kind: "lane", id: raw.lanes[0].name });
   assert.equal(askHref(raw.asks[0].id), `/p/drover-asks#ask/${raw.asks[0].id}`);
   assert.equal(route("#queue"), null);
-});
-
-test("the system tab shows hosts, services and alerts", () => {
-  const v = systemView(state);
-  assert.deepEqual(v.map((s) => s.title), ["Hosts", "Services", "Alerts"]);
-  assert.equal(v[0].items[0].text, `${raw.hosts[0].name} · ${raw.hosts[0].detail}`);
 });

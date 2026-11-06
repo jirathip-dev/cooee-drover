@@ -1,10 +1,10 @@
 //! `cooee-drover`: one backend for drover's four cooee plugins (cooee docs/plugins.md). It serves each plugin's UI
-//! module (`/queue.js`, `/lanes.js`, `/asks.js`, `/system.js`) to that plugin's bearer token only, and forwards
+//! module (`/queue.js`, `/lanes.js`, `/asks.js`, `/fleets.js`) to that plugin's bearer token only, and forwards
 //! `GET /api/v1/*` (JSON or the SSE event stream) and `POST /api/v1/<op>` (a form op) to herdsman for any of them.
 //! It never reads herdsman's files.
 //!
 //! Configuration is the environment: `DROVER_ADDR` (default `127.0.0.1:4810`), `HERDSMAN` (herdsman's base URL,
-//! default `http://127.0.0.1:7777`), a token per plugin, `DROVER_<QUEUE|LANES|ASKS|SYSTEM>_TOKEN` (a plugin without
+//! default `http://127.0.0.1:7777`), a token per plugin, `DROVER_<QUEUE|LANES|ASKS|FLEETS>_TOKEN` (a plugin without
 //! one is not served), and `HERDSMAN_COOKIE`, a paired device's cookie herdsman wants for its paired ops (drive,
 //! answer, bqueue, …).
 //!
@@ -22,7 +22,7 @@ const PLUGINS: [(&str, &str); 4] = [
     ("queue", include_str!("../web/dist/queue.js")),
     ("lanes", include_str!("../web/dist/lanes.js")),
     ("asks", include_str!("../web/dist/asks.js")),
-    ("system", include_str!("../web/dist/system.js")),
+    ("fleets", include_str!("../web/dist/fleets.js")),
 ];
 
 #[derive(Clone)]

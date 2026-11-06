@@ -4,7 +4,7 @@
   "type": "module",
   "description": "The four tab modules and their shared library; `npm run build` writes dist/ (committed, embedded in the binary)",
   "scripts": {
-    "build": "for m in queue lanes asks system; do esbuild src/$m.ts --bundle --minify --format=esm --target=es2022 --outfile=dist/$m.js || exit 1; done",
+    "build": "for m in queue lanes asks fleets; do esbuild src/$m.ts --bundle --minify --format=esm --target=es2022 --outfile=dist/$m.js || exit 1; done",
     "check": "tsc --noEmit",
     "test": "node --test \"test/*.test.ts\""
   },
