@@ -1,0 +1,50 @@
+name: ci
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: clippy, rustfmt
+      - name: fmt
+        run: cargo fmt --check
+      - name: clippy (pedantic, -D warnings)
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: test (the backend against a fake herdsman /api/v1)
+        run: cargo test --locked
+      - name: line cap (ci/cap.toml)
+        run: scripts/line-cap.sh
+      - name: public-repo hygiene
+        run: scripts/hygiene.sh
+
+  # The tab modules: strict tsc, the contract test on the recorded fixtures, the bundle (committed, embedded in the
+  # binary, so `cargo build` needs no Node) and its size budget.
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: install (pinned, package-lock.json)
+        run: npm ci --no-audit --no-fund
+      - name: typecheck (tsc --strict)
+        run: npm run check
+      - name: contract test (fixtures/ from herdsman /api/v1)
+        run: npm test
+      - name: build, and the committed dist is that build
+        run: |
+          npm run build
+          git diff --exit-code -- dist || { echo "::error::web/dist is stale: run \`npm run build\` in web/ and commit"; exit 1; }
+          test -z "$(git status --porcelain -- dist)" || { echo "::error::web/dist has uncommitted files"; exit 1; }
+      - name: bundle-size budget per module
+        run: ../scripts/bundle-size.sh
