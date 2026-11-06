@@ -1,6 +1,6 @@
-// herdsman API v1's shapes the tabs read (herdsman assets/types/api.d.ts), and `parseState` / `parseQueue`, the contract
-// checks the tabs run on `/api/v1/state` and `/api/v1/queue`: a field herdsman drops or retypes fails here, loudly, not
-// as a blank tab.
+// herdsman API v1's shapes the tabs read (herdsman assets/types/api.d.ts), and `parseState`, `parseQueue`, `parseNeeds`,
+// `parseEvents`, the contract checks the tabs run on their `/api/v1` reads: a field herdsman drops or retypes fails
+// here, loudly, not as a blank tab.
 export type Fleet = { name: string; repo: string; color: string; paused: boolean };
 export type Queued = { fleet: string; issue: number; title?: string | null; state: string; blocked_by?: number | null };
 export type Lane = {
@@ -82,6 +82,25 @@ export type QueueRow = {
 };
 export type PrLine = { pr?: number | null; run?: string | null; ci?: string | null; verdict?: string | null; vtone: string; rounds: number; form?: string | null };
 export type BacklogIssue = { title: string; created: string; updated: string; labels: string[]; ac: boolean; pr: boolean };
+/** #269: API v1's `needs`, the needs-you cards: open asks, blocked lanes' cards and `needs-human` issues. */
+export type NeedsTab = {
+  now: number; rw: boolean; live: boolean; paired: boolean; pair: boolean; mtime: string; snap: number; choosing: number;
+  asks: NeedAsk[]; blocked: Blocked[]; issues: NeedIssue[];
+};
+/** An ask's card: `who` (fleet · #issue · agent · age), its `kind` line, imported `from`; #412 a design's `pngs`. */
+export type NeedAsk = { ask: Ask; who: string; kind: string; from?: string | null; pngs: string[]; thread?: string | null; title?: string | null };
+/** A blocked lane's card: unpaired, its `activity`; else a harness `menu`, or the pane's last lines (`tail`). */
+export type Blocked = { name: string; who: string; push: boolean; activity?: string | null; menu?: Menu | null; tail?: string | null };
+/** #127: a harness menu: `countdown` (s) before it auto-denies, `h` the hash of the menu the card shows. */
+export type Menu = { title: string; reason: string; command: string; countdown?: number | null; question: string; options: string[]; h: string };
+/** #130: a `needs-human` issue (`pending`: one more round recorded, no lane yet); #417 the verdict's `shots`. */
+export type NeedIssue = {
+  fleet: string; issue: number; pending: boolean; who: string; title: string; why: string; pass?: string | null; stale: boolean;
+  fail: string; pr: PrLine; repo?: string | null; mergeable: string; merge: boolean; shots: string[];
+};
+/** #259: API v1's `events?since=N`: the events after N in `list`; over 500, none and `refresh`. */
+export type Events = { seq: number; refresh: boolean; list: Ev[] };
+export type Ev = { seq: number; ts: number; fleet: string; issue?: number | null; type: string; data: Record<string, unknown>; plain: string };
 /** A POST's answer: `code` OK, a `REFUSED` code or ERROR; `message` the line to show. */
 export type Reply = { ok: boolean; code: string; message: string };
 
@@ -102,6 +121,23 @@ const STATE = {
   }],
   asks: [ASK], hosts: [ROW], services: [ROW], alerts: [ROW],
 };
+const PR = { pr: "number?", run: "string?", ci: "string?", verdict: "string?", vtone: "string", rounds: "number", form: "string?" };
+const NEEDS = {
+  now: "number", rw: "boolean", live: "boolean", paired: "boolean", pair: "boolean", mtime: "string", snap: "number", choosing: "number",
+  asks: [{ ask: ASK, who: "string", kind: "string", from: "string?", pngs: ["string"], thread: "string?", title: "string?" }],
+  blocked: [{
+    name: "string", who: "string", push: "boolean", activity: "string?", tail: "string?",
+    menu: { "?": "", title: "string", reason: "string", command: "string", countdown: "number?", question: "string", options: ["string"], h: "string" },
+  }],
+  issues: [{
+    fleet: "string", issue: "number", pending: "boolean", who: "string", title: "string", why: "string", pass: "string?", stale: "boolean",
+    fail: "string", pr: PR, repo: "string?", mergeable: "string", merge: "boolean", shots: ["string"],
+  }],
+};
+const EVENTS = {
+  seq: "number", refresh: "boolean",
+  list: [{ seq: "number", ts: "number", fleet: "string", issue: "number?", type: "string", data: {}, plain: "string" }],
+};
 const QUEUE = {
   now: "number", rw: "boolean", mtime: "string", error: "string?",
   fleets: [{
@@ -114,7 +150,7 @@ const QUEUE = {
       issue: "number", state: "string", tone: "string", t: "number", queued: "boolean", check: "boolean", groups: ["string"],
       blocked_by: "number?", title: "string?", stage: [{ name: "string", k: "string", g: "string", at: "number", ok: "boolean" }],
       lane: "string", live: "boolean", dead: "boolean", notes: ["string"], decided: "string?", mv: "boolean", up: "number?", down: "number?",
-      pr: { pr: "number?", run: "string?", ci: "string?", verdict: "string?", vtone: "string", rounds: "number", form: "string?" },
+      pr: PR,
       ask: { "?": "", ...ASK }, open: { "?": "", ask: ASK, thread: "string?", title: "string?" },
       lanes: [{ name: "string", state: "string", tone: "string", ago: "string", link: "string" }],
     }],
@@ -140,3 +176,5 @@ function parse<T>(path: string, spec: Spec, json: unknown): T {
 
 export const parseState = (json: unknown): State => parse("state", STATE, json);
 export const parseQueue = (json: unknown): QueueTab => parse("queue", QUEUE, json);
+export const parseNeeds = (json: unknown): NeedsTab => parse("needs", NEEDS, json);
+export const parseEvents = (json: unknown): Events => parse("events", EVENTS, json);
