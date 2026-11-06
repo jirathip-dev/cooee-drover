@@ -1,0 +1,11 @@
+[package]
+name = "cooee-drover"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+description = "drover's cooee plugins: queue, lanes, asks and system tabs over herdsman /api/v1"
+publish = false
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }

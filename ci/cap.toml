@@ -1,0 +1,4 @@
+# The non-test line cap `scripts/line-cap.sh` enforces in CI: src/ Rust and web/src TypeScript (tests/ and web/test/
+# are tests). Raising it needs the owner's OK in an issue.
+[fleet.cooee-drover]
+line_cap = 6000
