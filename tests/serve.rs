@@ -22,9 +22,14 @@ impl Drop for Drover {
 }
 
 fn drover(herdsman: &str) -> Drover {
+    drover_with(herdsman, &[])
+}
+
+fn drover_with(herdsman: &str, envs: &[(&str, &str)]) -> Drover {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_cooee-drover"));
     cmd.env("DROVER_ADDR", "127.0.0.1:0")
-        .env("HERDSMAN", herdsman);
+        .env("HERDSMAN", herdsman)
+        .envs(envs.iter().copied());
     for p in PLUGINS {
         cmd.env(format!("DROVER_{}_TOKEN", p.to_uppercase()), token(p));
     }
@@ -54,7 +59,8 @@ fn get(addr: &str, path: &str, auth: Option<&str>) -> (String, String) {
     (head.lines().next().unwrap().to_owned(), body.to_owned())
 }
 
-/// A fake herdsman answering one call: `answer` writes the reply; the request head it saw comes back on the channel.
+/// A fake herdsman answering one call: `answer` writes the reply; the request it saw (head, and a POST's body) comes
+/// back on the channel.
 fn herdsman(
     answer: impl FnOnce(&mut TcpStream) + Send + 'static,
 ) -> (String, mpsc::Receiver<String>) {
@@ -66,7 +72,13 @@ fn herdsman(
         let mut head = String::new();
         let mut r = BufReader::new(c.try_clone().unwrap());
         while r.read_line(&mut head).unwrap() > 2 {}
-        tx.send(head).unwrap();
+        let n = head
+            .lines()
+            .find_map(|l| l.strip_prefix("content-length: "))
+            .map_or(0, |n| n.parse().unwrap());
+        let mut body = vec![0; n];
+        r.read_exact(&mut body).unwrap();
+        tx.send(head + &String::from_utf8(body).unwrap()).unwrap();
         answer(&mut c);
     });
     (url, rx)
@@ -136,6 +148,49 @@ fn api_v1_goes_to_herdsman_without_the_token() {
         !head.to_ascii_lowercase().contains("authorization"),
         "cooee's token stays here: {head}"
     );
+}
+
+#[test]
+fn a_form_op_posts_to_herdsman_with_its_body_and_the_paired_cookie() {
+    let (url, seen) = herdsman(|c| {
+        c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+            .unwrap();
+    });
+    let d = drover_with(&url, &[("HERDSMAN_COOKIE", "hd=paired-device")]);
+    let form = "fleet=f&mtime=1";
+    let mut c = TcpStream::connect(&d.1).unwrap();
+    let auth = token("queue");
+    write!(
+        c,
+        "POST /api/v1/pause HTTP/1.0\r\nAuthorization: Bearer {auth}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{form}",
+        form.len()
+    )
+    .unwrap();
+    let mut out = String::new();
+    c.read_to_string(&mut out).unwrap();
+    assert!(out.starts_with("HTTP/1.1 200 OK"), "{out}");
+    let host = url.trim_start_matches("http://");
+    assert_eq!(
+        seen.recv().unwrap(),
+        format!(
+            "POST /api/v1/pause HTTP/1.0\r\nHost: {host}\r\ncontent-type: application/x-www-form-urlencoded\r\ncookie: hd=paired-device\r\ncontent-length: 15\r\n\r\n{form}"
+        )
+    );
+}
+
+#[test]
+fn only_api_v1_takes_a_post() {
+    let d = drover("http://127.0.0.1:9");
+    let mut c = TcpStream::connect(&d.1).unwrap();
+    let auth = token("queue");
+    write!(
+        c,
+        "POST /queue.js HTTP/1.0\r\nAuthorization: Bearer {auth}\r\n\r\n"
+    )
+    .unwrap();
+    let mut out = String::new();
+    c.read_to_string(&mut out).unwrap();
+    assert!(out.starts_with("HTTP/1.0 405 Method Not Allowed"), "{out}");
 }
 
 #[test]

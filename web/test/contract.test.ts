@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import { route } from "../src/lib/links.ts";
-import { parseState } from "../src/lib/types.ts";
-import { asksView, lanesView, queueView, systemView } from "../src/lib/views.ts";
+import { parseQueue, parseState } from "../src/lib/types.ts";
+import { asksView, lanesView, systemView } from "../src/lib/views.ts";
 
 const raw = JSON.parse(fs.readFileSync(new URL("../fixtures/state.json", import.meta.url), "utf8"));
 const state = parseState(raw);
@@ -19,15 +19,17 @@ test("a dropped or retyped field breaks the contract, naming it", () => {
   const lanes = [{ ...raw.lanes[0], since: "0" }];
   assert.throws(() => parseState({ ...raw, lanes }), /at lanes\[0\]\.since$/);
   const asks = [{ ...raw.asks[0], options: [1] }];
-  assert.throws(() => parseState({ ...raw, asks }), /at asks\[0\]\.options$/);
+  assert.throws(() => parseState({ ...raw, asks }), /at asks\[0\]\.options\[0\]$/);
 });
 
-test("the queue tab lists the fleet names", () => {
-  const items = queueView(state)[0].items;
-  assert.deepEqual(
-    items.map((i) => i.text.split(" · ")[0]),
-    raw.fleets.map((f: { name: string }) => f.name),
-  );
+test("the recorded queue fits the contract; a retyped field breaks it, naming it", () => {
+  const q = JSON.parse(fs.readFileSync(new URL("../fixtures/queue.json", import.meta.url), "utf8"));
+  assert.ok(parseQueue(q).fleets[0].rows.length > 0);
+  q.fleets[1].rows[0].stage = [{ name: "impl" }];
+  assert.throws(() => parseQueue(q), /queue broke the contract at fleets\[1\]\.rows\[0\]\.stage\[0\]\.k$/);
+  q.fleets[1].backlog.issues["22"].labels = "x";
+  q.fleets[1].rows[0].stage = [];
+  assert.throws(() => parseQueue(q), /at fleets\[1\]\.backlog\.issues\.22\.labels$/);
 });
 
 test("lanes and asks link across tabs, and the link's hash routes back", () => {
