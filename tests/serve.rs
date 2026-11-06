@@ -289,7 +289,8 @@ fn a_design_png_comes_back_as_a_data_url_and_a_missing_one_as_404() {
     );
 }
 
-/// A fake server answering `answers` in turn, one connection each; each request it saw comes back on the channel.
+/// A fake server answering `answers` in turn (a 200 with it as the body, or one starting `HTTP/` verbatim), one
+/// connection each; each request it saw comes back on the channel.
 fn replies(answers: Vec<String>) -> (String, mpsc::Receiver<String>) {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", l.local_addr().unwrap());
@@ -311,12 +312,16 @@ fn replies(answers: Vec<String>) -> (String, mpsc::Receiver<String>) {
             let mut body = vec![0; n];
             r.read_exact(&mut body).unwrap();
             let _ = tx.send(head + &String::from_utf8(body).unwrap());
-            write!(
-                c,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{a}",
-                a.len()
-            )
-            .unwrap();
+            if a.starts_with("HTTP/") {
+                c.write_all(a.as_bytes()).unwrap();
+            } else {
+                write!(
+                    c,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{a}",
+                    a.len()
+                )
+                .unwrap();
+            }
         }
     });
     (url, rx)
@@ -372,4 +377,127 @@ fn an_undelivered_answer_after_start_is_pushed_through_cooee() {
             .is_err(),
         "pushed once"
     );
+}
+
+/// Reliability R2 (herdsman#539): 0.1's install (its `system` tab, since renamed `fleets`) still starts: a warning
+/// names the retired token, the tabs it has tokens for are served.
+#[test]
+fn r2_a_past_releases_config_starts_with_a_warning_not_an_error() {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_cooee-drover"));
+    cmd.env("DROVER_ADDR", "127.0.0.1:0")
+        .env("HERDSMAN", "http://127.0.0.1:9")
+        .env_remove("DROVER_FLEETS_TOKEN");
+    for p in ["queue", "lanes", "asks", "system"] {
+        cmd.env(format!("DROVER_{}_TOKEN", p.to_uppercase()), token(p));
+    }
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    assert!(line.starts_with("cooee-drover on http://"), "{line}");
+    let d = Drover(
+        child,
+        line.trim().rsplit("http://").next().unwrap().to_owned(),
+    );
+    assert_eq!(
+        get(&d.1, "/asks.js", Some(&token("asks"))).0,
+        "HTTP/1.0 200 OK"
+    );
+    assert_eq!(
+        get(&d.1, "/fleets.js", Some(&token("system"))).0,
+        "HTTP/1.0 401 Unauthorized"
+    );
+    let mut d = d;
+    let _ = d.0.kill();
+    let mut err = String::new();
+    d.0.stderr.take().unwrap().read_to_string(&mut err).unwrap();
+    assert!(
+        err.contains("warning: DROVER_SYSTEM_TOKEN is no plugin's token"),
+        "{err}"
+    );
+}
+
+/// Reliability R7 (herdsman#337): a page's call is one herdsman read at most: a module needs none, an `/api/v1` read
+/// exactly one (the backend runs no subprocess and reads nothing else per request).
+#[test]
+fn r7_a_page_load_does_no_other_live_io() {
+    let (url, seen) = replies(vec!["{}".into(), "{}".into()]);
+    let d = drover(&url);
+    assert_eq!(
+        get(&d.1, "/asks.js", Some(&token("asks"))).0,
+        "HTTP/1.0 200 OK"
+    );
+    let quiet = std::time::Duration::from_millis(300);
+    assert!(seen.recv_timeout(quiet).is_err(), "a module reads nothing");
+    assert_eq!(
+        get(&d.1, "/api/v1/needs", Some(&token("asks"))).0,
+        "HTTP/1.1 200 OK"
+    );
+    assert!(
+        seen.recv()
+            .unwrap()
+            .starts_with("GET /api/v1/needs HTTP/1.0\r\n")
+    );
+    assert!(seen.recv_timeout(quiet).is_err(), "one read per page call");
+}
+
+/// Reliability R17 (herdsman#547): an image path that is no `/<kind>/<fleet>/<n>/<i>` (a `..`, an encoded slash, a
+/// file name) is a 404 here and never reaches herdsman.
+#[test]
+fn r17_a_traversal_or_file_name_is_no_image() {
+    let (url, seen) = replies(vec!["data".into()]);
+    let d = drover(&url);
+    for p in [
+        "/design/fleet-1/../x.png",
+        "/design/../4/0",
+        "/shot/fleet-1/4/..%2Fx.png",
+        "/shot/fleet-1/4/0/../../../tmp/a.png",
+        "/design/tmp/a.png",
+        "/design//4/0",
+        "/shot/%2E%2E/4/0",
+    ] {
+        assert_eq!(
+            get(&d.1, p, Some(&token("asks"))),
+            ("HTTP/1.0 404 Not Found".into(), "no such image".into()),
+            "{p}"
+        );
+    }
+    let quiet = std::time::Duration::from_millis(300);
+    assert!(seen.recv_timeout(quiet).is_err(), "herdsman was asked");
+}
+
+/// Reliability R21 (herdsman#325, #143): an undelivered answer whose push cooee refused (down, restarting) is pushed
+/// again on the next read, not dropped.
+#[test]
+fn r21_an_undelivered_push_cooee_refused_is_pushed_again() {
+    let ev = r#"{"seq":7,"ts":1,"fleet":"f","issue":4,"type":"answer-undelivered","data":{"id":"q1"},"text":"x","plain":"f #4 answer-undelivered: q1"}"#;
+    let (cooee, pushed) = replies(vec![
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n".into(),
+        r#"{"ok":true}"#.into(),
+    ]);
+    let (url, seen) = replies(vec![
+        r#"{"seq":5,"refresh":false,"list":[]}"#.into(),
+        format!(r#"{{"seq":7,"refresh":false,"list":[{ev}]}}"#),
+        format!(r#"{{"seq":7,"refresh":false,"list":[{ev}]}}"#),
+        r#"{"seq":7,"refresh":false,"list":[]}"#.into(),
+    ]);
+    let _d = drover_with(&url, &[("COOEE", &cooee), ("DROVER_POLL_SECS", "0")]);
+    let reads: Vec<String> = (0..4).map(|_| seen.recv().unwrap()).collect();
+    let since: Vec<&str> = reads
+        .iter()
+        .map(|r| r.split(['=', ' ']).nth(2).unwrap())
+        .collect();
+    assert_eq!(since, ["0", "5", "6", "7"], "the refused one read again");
+    for _ in 0..2 {
+        let push = pushed.recv().unwrap();
+        assert!(
+            push.ends_with(r#"{"text":"f #4 answer-undelivered: q1","path":"undelivered"}"#),
+            "{push}"
+        );
+    }
 }

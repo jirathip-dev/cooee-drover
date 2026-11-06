@@ -44,6 +44,15 @@ fn main() {
             ))
         })
         .collect();
+    // herdsman#539: a retired tab's token (0.1's `DROVER_SYSTEM_TOKEN`) is a warning, never a failed start.
+    for (k, _) in env::vars().filter(|(k, _)| k.starts_with("DROVER_") && k.ends_with("_TOKEN")) {
+        if !PLUGINS
+            .iter()
+            .any(|(p, _)| k == format!("DROVER_{}_TOKEN", p.to_uppercase()))
+        {
+            eprintln!("cooee-drover: warning: {k} is no plugin's token (a retired tab?): ignored");
+        }
+    }
     let cookie = env::var("HERDSMAN_COOKIE").ok();
     let cfg = Config {
         herdsman,
@@ -163,6 +172,18 @@ fn handle(cfg: &Config, mut c: TcpStream) -> io::Result<()> {
     let api = path.starts_with("/api/v1/");
     let cookie = cfg.cookie_line();
     if method == "GET" && (path.starts_with("/design/") || path.starts_with("/shot/")) {
+        // herdsman#547: only `/<kind>/<fleet>/<n>/<i>`; a `..`, `%` or extra segment never reaches herdsman.
+        let seg: Vec<&str> = path.split('/').skip(2).collect();
+        let name = |s: &str| {
+            !s.is_empty()
+                && !s.starts_with('.')
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        };
+        let num = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+        if !matches!(seg[..], [fleet, n, i] if name(fleet) && num(n) && num(i)) {
+            return reply(&mut c, "404 Not Found", "text/plain", "no such image");
+        }
         let mut out = Vec::new();
         forward(&cfg.herdsman, "GET", path, &cookie, &[], &mut out)?;
         let pos = out.windows(4).position(|w| w == b"\r\n\r\n");
@@ -304,6 +325,7 @@ fn undelivered(cfg: &Config, cooee: &str, token: &str, secs: u64) {
         let top = objs
             .next()
             .and_then(|s| s.split(',').next()?.parse::<u64>().ok());
+        let mut next = top.or(since);
         for e in objs.filter(|e| since.is_some() && e.contains("\"type\":\"answer-undelivered\"")) {
             if let Some(line) = literal(e, "plain") {
                 let body = format!(r#"{{"text":{line},"path":"undelivered"}}"#);
@@ -311,17 +333,28 @@ fn undelivered(cfg: &Config, cooee: &str, token: &str, secs: u64) {
                     "Authorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
                     body.len()
                 );
+                let mut out = Vec::new();
                 let _ = forward(
                     cooee,
                     "POST",
                     "/plugin/push",
                     &head,
                     body.as_bytes(),
-                    &mut Vec::new(),
+                    &mut out,
                 );
+                // herdsman#325: cooee down or restarting: this event is read and pushed again next time, not lost.
+                if out
+                    .split(|b| *b == b' ')
+                    .nth(1)
+                    .is_none_or(|s| !s.starts_with(b"2"))
+                {
+                    let seq = e.split(',').next().and_then(|s| s.parse::<u64>().ok());
+                    next = seq.map(|s| s - 1).or(since);
+                    break;
+                }
             }
         }
-        since = top.or(since);
+        since = next;
         thread::sleep(Duration::from_secs(secs));
     }
 }

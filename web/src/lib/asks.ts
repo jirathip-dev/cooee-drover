@@ -3,8 +3,8 @@
 // recommended first and a free-text box), each blocked lane's card (a permission prompt's reason, command, auto-deny
 // countdown and menu), each `needs-human` issue (verdict, screenshots, merge anyway / one more round / park), the
 // [later] fold, and the answers herdsman logged `answer-undelivered`.
-import { events, image, needs, post } from "./api.ts";
-import { h, type Kid } from "./dom.ts";
+import { events, image, needs, post, uniq } from "./api.ts";
+import { h, late, strip, type Kid } from "./dom.ts";
 import { threadHref } from "./links.ts";
 import type { Blocked, Ev, NeedAsk, NeedIssue, NeedsTab, Reply } from "./types.ts";
 
@@ -51,24 +51,26 @@ export function undelivered(list: Ev[], now: number): Ev[] {
  * them again. `tick` redraws while a countdown runs.
  */
 export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 1000, store = phone()) {
-  let d: NeedsTab | null = null, err = "", at = 0, since = -1, tries: Ev[] = [], unfold = false;
+  let d: NeedsTab | null = null, err = "", at = 0, since = -1, tries: Ev[] = [], unfold = false, slow = false;
   const text: Record<string, string> = {}, imgs: Record<string, string> = {};
   let msg: [string, string] = ["", ""];
   const pending = new Set<string>(), sure = new Set<string>();
-  const redraw = () => draw(d ? view(d) : [h("p", { class: "r" }, err || "loading…")]);
+  const redraw = () => draw([...strip(slow), ...(d ? view(d) : err ? [h("p", { class: "r" }, err)] : [])]);
   const load = async () => {
+    const done = late((s) => ((slow = s), s && redraw()));
     try {
       d = await needs();
       // #143: the answers' delivery tries, from the newest 500 events on, then only the new ones.
       if (since < 0) since = Math.max(0, (await events(0)).seq - 500);
       const e = await events(since);
-      if (!e.refresh) (tries = [...tries, ...e.list.filter((x) => x.type.startsWith("answer-"))]), (since = e.seq);
+      if (!e.refresh) (tries = uniq([...tries, ...e.list.filter((x) => x.type.startsWith("answer-"))], (x) => x.seq)), (since = e.seq);
       at = clock();
       // A recorded one more round is herdsman's line from now on.
       for (const k of pending) if (!d.issues.some((s) => `nh:${s.fleet}#${s.issue}` === k && !s.pending)) pending.delete(k);
     } catch (e) {
       (d = null), (err = String(e));
     }
+    done();
     redraw();
     // #412 #417: each image once (per ask, per verdict), drawn when it comes.
     const want = d ? [...d.asks.flatMap(pngs), ...d.issues.flatMap(shots)].filter(([, , k]) => !(k in imgs)) : [];
@@ -88,11 +90,6 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
   const figs = (list: string[][]) =>
     list.map(([, n, k]) => h("figure", {}, imgs[k] && h("img", { src: imgs[k], alt: n }), h("figcaption", { class: "m" }, n)));
 
-  // #154: a card's key (its kind and who, less the age) and its content; hidden while both hold and 12 h last.
-  const later = (key: string, sig: string) => {
-    const e = store.get()[key];
-    return !!e && e.until > clock() && e.sig === sig;
-  };
   const hide = (cards: Card[]) => () => {
     const l = store.get();
     for (const c of cards) l[c.key] = { until: clock() + 12 * 3600, sig: c.sig };
@@ -157,8 +154,11 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
   };
   const view = (d: NeedsTab): Kid[] => {
     const cards = [...d.asks.map(ask), ...d.blocked.map(blocked), ...d.issues.map(issue)];
-    const off = cards.filter((c) => later(c.key, c.sig)), on = cards.filter((c) => !off.includes(c));
-    store.set(Object.fromEntries(off.map((c) => [c.key, store.get()[c.key]])));
+    // #154: a card's key (its kind and who, less the age) and its content; hidden while both hold and 12 h last.
+    // herdsman#447: the phone's store read once per draw, not once per card.
+    const l = store.get(), hid = (c: Card) => !!l[c.key] && l[c.key].until > clock() && l[c.key].sig === c.sig;
+    const off = cards.filter(hid), on = cards.filter((c) => !hid(c));
+    store.set(Object.fromEntries(off.map((c) => [c.key, l[c.key]])));
     const card = (c: Card) => h("div", { class: "ask" }, ...c.body, h("button", { class: "lat", on: hide([c]) }, "later"));
     return h("main", {},
       h("p", { class: "bar" }, h("b", {}, "needs you "), span(cards.length ? "badge on" : "badge", String(cards.length))),

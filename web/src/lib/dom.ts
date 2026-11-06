@@ -32,3 +32,11 @@ export function mount(kids: Kid[], css: string): void {
   g?.focus();
   if (g && at != null) g.setSelectionRange(at, at);
 }
+
+/** herdsman#450: `on(true)` once a read runs past 300 ms (a tab then draws `strip` over its page, never a loader in
+ * its place); the returned `done` cancels it and sets `on(false)`, before the tab's redraw. */
+export function late(on: (slow: boolean) => void): () => void {
+  const t = setTimeout(on, 300, true);
+  return () => (clearTimeout(t), on(false));
+}
+export const strip = (slow: boolean): Kid[] => (slow ? [h("p", { class: "m strip" }, "loading…")] : []);
