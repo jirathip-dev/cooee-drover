@@ -3,7 +3,7 @@
 // its drive line, rows grouped needs you / in progress / queued, blocked chains as a tree (folded to one row in the
 // queue), the open card (stage chips, lane, links, ask, ▲/▼, lanes), done today, the backlog and the [?] legend.
 import { image, issue, post, queue } from "./api.ts";
-import { h, type El, type Kid } from "./dom.ts";
+import { h, late, strip, type El, type Kid } from "./dom.ts";
 import { laneHref, threadHref } from "./links.ts";
 import type { Ask, IssueView, QueueCard, QueueRow, QueueTab, Verdict } from "./types.ts";
 
@@ -84,17 +84,19 @@ const span = (cls: string, ...k: (Kid | false | null)[]) => h("span", { class: c
  * page's `mtime`, shows herdsman's answer and reads the queue again.
  */
 export function queueTab(draw: (kids: Kid[]) => void) {
-  let d: QueueTab | null = null, err = "";
+  let d: QueueTab | null = null, err = "", slow = false;
   // herdsman#576: an open issue's verdicts, and each image as a `data:` URL by path ("": being read).
   const iv: Record<string, IssueView> = {}, imgs: Record<string, string> = {};
   const ui: UI = { repo: "", open: new Set(), busy: {}, msg: ["", ""], bl: {}, text: {} };
-  const redraw = () => draw(d ? view(d) : [h("p", { class: "r" }, err || "loading…")]);
+  const redraw = () => draw([...strip(slow), ...(d ? view(d) : err ? [h("p", { class: "r" }, err)] : [])]);
   const load = async () => {
+    const done = late((s) => ((slow = s), s && redraw()));
     try {
       d = await queue();
     } catch (e) {
       (d = null), (err = String(e));
     }
+    done();
     redraw();
   };
   const toggle = (k: string) => () => (ui.open.has(k) ? ui.open.delete(k) : ui.open.add(k), redraw());

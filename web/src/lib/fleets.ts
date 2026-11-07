@@ -3,7 +3,7 @@
 // lanes switch, fleet disk, notifiers), `state` and `events` (activity) as a tree of `h` nodes: pure, so the tests tap
 // it under node. A destructive tap asks first; every tap shows herdsman's answer and reads it all again.
 import { events, fleets as config, host, post, state } from "./api.ts";
-import { h, type Kid } from "./dom.ts";
+import { h, late, strip, type Kid } from "./dom.ts";
 import { dur } from "./queue.ts";
 import type { Bar, Conductor, Ev, FleetsTab, HostTab, Pipe, RoleRow, State } from "./types.ts";
 
@@ -78,16 +78,17 @@ export function pipeline(p: Pipe): Kid[] {
 
 /** The tab: `draw` gets the tree after every change; `load` reads herdsman's `queue`, `host`, `state` and newest events. */
 export function fleetsTab(draw: (kids: Kid[]) => void) {
-  let q: FleetsTab | null = null, hs: HostTab | null = null, st: State | null = null, ev: Ev[] = [], err: string[] = [], busy = true;
+  let q: FleetsTab | null = null, hs: HostTab | null = null, st: State | null = null, ev: Ev[] = [], err: string[] = [], busy = true, slow = false;
   const ui: UI = { open: new Set(), msg: ["", ""], imp: false, shown: 100, sure: "", pick: {} };
   const redraw = () => draw(view());
   const got = <T>(r: PromiseSettledResult<T>): T | null => (r.status === "fulfilled" ? r.value : (err.push(r.reason instanceof Error ? r.reason.message : String(r.reason)), null));
   const load = async () => {
+    const done = late((s) => ((slow = s), s && redraw()));
     err = [];
     const [a, b, c] = await Promise.allSettled([config(), host(), state()]);
     (q = got(a)), (hs = got(b)), (st = got(c));
     if (st) ev = got((await Promise.allSettled([events(Math.max(0, st.seq - 500), st.seq)]))[0])?.list ?? [];
-    busy = false;
+    (busy = false), done();
     redraw();
   };
   const first = () => ev.reduce((m, e) => Math.min(m, e.seq), Infinity);
@@ -206,8 +207,9 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
     return out;
   };
   const view = (): Kid[] => {
-    if (busy) return [h("p", { class: "m" }, "loading…")];
+    if (busy) return strip(slow);
     return some([
+      ...strip(slow),
       ...err.map((e) => h("p", { class: "r" }, e)),
       ui.msg[1] && h("p", { class: ui.msg[0] }, ui.msg[1]),
       ...(q ? fleets(q) : []),
