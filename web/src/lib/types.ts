@@ -1,6 +1,6 @@
 // herdsman API v1's shapes the tabs read (herdsman assets/types/api.d.ts), and `parseState`, `parseQueue`, `parseNeeds`,
-// `parseEvents`, `parseIssue`, the contract checks the tabs run on their `/api/v1` reads: a field herdsman drops or retypes fails
-// here, loudly, not as a blank tab.
+// `parseEvents`, `parseIssue`, `parseLessons`, `parseDigest`, the contract checks the tabs run on their `/api/v1` reads:
+// a field herdsman drops or retypes fails here, loudly, not as a blank tab.
 export type Fleet = { name: string; repo: string; color: string; paused: boolean };
 export type Queued = { fleet: string; issue: number; title?: string | null; state: string; blocked_by?: number | null };
 export type Lane = {
@@ -139,6 +139,10 @@ export type IssueView = { fleet: string; issue: number; verdicts: Verdict[] };
 export type Verdict = { role: string; round: number; sha: string; verdict: string; ts: number; findings: string; shots: string[]; repro?: Repro | null };
 /** herdsman#420: a `--repro` PASS's `Repro:` block: `kind` `run` (both runs fenced) or `verify` (a `>` quoted reason), its lines `text`. */
 export type Repro = { kind: string; text: string };
+/** herdsman#576: API v1's `lessons`: per fleet its `lessons` (`weekly`, `off`), the `last` run (its issue, spawn `ts`, the issue's `state`), the `next` due (null: off). */
+export type Lessons = { fleets: { fleet: string; lessons: string; last?: { issue: number; ts: number; state: string } | null; next?: number | null }[] };
+/** herdsman#576: `lessons/<fleet>/digest?days=N`: `herdsman lesson digest`'s text. */
+export type Digest = { fleet: string; days: number; text: string };
 /** A POST's answer: `code` OK, a `REFUSED` code or ERROR; `message` the line to show. */
 export type Reply = { ok: boolean; code: string; message: string };
 
@@ -221,6 +225,8 @@ const ISSUE = {
   fleet: "string", issue: "number",
   verdicts: [{ role: "string", round: "number", sha: "string", verdict: "string", ts: "number", findings: "string", shots: ["string"], repro: { "?": "", kind: "string", text: "string" } }],
 };
+const LESSONS = { fleets: [{ fleet: "string", lessons: "string", last: { "?": "", issue: "number", ts: "number", state: "string" }, next: "number?" }] };
+const DIGEST = { fleet: "string", days: "number", text: "string" };
 
 function fits(v: unknown, s: Spec, at: string): string | null {
   if (typeof s === "string") return (s.endsWith("?") ? v == null || typeof v === s.slice(0, -1) : typeof v === s) ? null : at;
@@ -246,3 +252,5 @@ export const parseHost = (json: unknown): HostTab => parse("host", HOST, json);
 export const parseNeeds = (json: unknown): NeedsTab => parse("needs", NEEDS, json);
 export const parseIssue = (json: unknown): IssueView => parse("issue", ISSUE, json);
 export const parseEvents = (json: unknown): Events => parse("events", EVENTS, json);
+export const parseLessons = (json: unknown): Lessons => parse("lessons", LESSONS, json);
+export const parseDigest = (json: unknown): Digest => parse("lessons/<fleet>/digest", DIGEST, json);
