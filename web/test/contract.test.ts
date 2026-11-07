@@ -42,6 +42,11 @@ test("herdsman#576: the recorded issue's verdicts and the queue's marks fit the 
   assert.deepEqual(parseIssue(i).verdicts.map((v) => [v.role, v.verdict, v.shots.length]), [["verify", "PASS", 2], ["rev", "PASS", 0]]);
   i.verdicts[0].shots = [1];
   assert.throws(() => parseIssue(i), /issue broke the contract at verdicts\[0\]\.shots\[0\]$/);
+  i.verdicts[0].shots = [];
+  assert.deepEqual(parseIssue(i).verdicts.map((v) => v.repro?.kind ?? null), [null, "run"], "#15: the rev PASS's Repro: block");
+  assert.equal(q.fleets[0].marks["22"].repro, true);
+  i.verdicts[1].repro.text = ["x"];
+  assert.throws(() => parseIssue(i), /issue broke the contract at verdicts\[1\]\.repro\.text$/);
 });
 
 test("the recorded needs and events fit the contract; a retyped field breaks it, naming it", () => {
