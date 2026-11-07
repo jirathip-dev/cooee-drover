@@ -9,5 +9,7 @@ export type Section = { title: string; items: Item[] };
 export const lanesView = (s: State): Section[] =>
   [...new Set(s.lanes.map((l) => l.role))].map((role) => ({
     title: role,
-    items: s.lanes.filter((l) => l.role === role).map((l) => ({ text: `${l.name} · ${l.shown}`, tone: l.tone, href: laneHref(l.name) })),
+    items: s.lanes
+      .filter((l) => l.role === role)
+      .map((l) => ({ text: `${l.name} · ${l.shown}`, tone: l.tone, href: laneHref(l.name) })),
   }));
