@@ -1,18 +1,23 @@
 // The drover-queue tab, a test per herdsman#553 row (36-48): the real tab module (`lib/queue.ts`) and client
-// (`lib/api.ts`) against a fake `cooee` that serves the recorded `/api/v1/queue` fixture and records each form POST.
+// (`lib/api.ts`) against a fake `cooee` that serves the recorded `/api/v1/queue` fixture and records each form POST;
+// herdsman#14's verify rows, marks and issue sheet on the recorded `queue` and `issue` fixtures.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import type { El, Kid } from "../src/lib/dom.ts";
 import { HINT, queueTab } from "../src/lib/queue.ts";
-import type { QueueRow, QueueTab } from "../src/lib/types.ts";
+import type { IssueView, QueueRow, QueueTab } from "../src/lib/types.ts";
 
 const raw: QueueTab = JSON.parse(fs.readFileSync(new URL("../fixtures/queue.json", import.meta.url), "utf8"));
+const rawIssue: IssueView = JSON.parse(fs.readFileSync(new URL("../fixtures/issue.json", import.meta.url), "utf8"));
 
 type Post = { path: string; f: Record<string, string> };
-/** A fake herdsman behind `cooee.fetch`: `q` is its queue; `on` answers a POST (and may change `q`). */
-function herdsman(q: QueueTab, on: (p: Post) => Promise<string> | string = () => '{"ok":true,"code":"OK","message":"done"}') {
-  const posts: Post[] = [];
+/**
+ * A fake herdsman behind `cooee.fetch`: `q` is its queue; `on` answers a POST (and may change `q`) with a status;
+ * `served` answers other GETs by path (an `issue/…` not in it has no verdicts; any other path is a 404).
+ */
+function herdsman(q: QueueTab, on: (p: Post) => Promise<string> | string = () => '{"ok":true,"code":"OK","message":"done"}', served: Record<string, string> = {}) {
+  const posts: Post[] = [], other: string[] = [];
   let gets = 0;
   (globalThis as { cooee?: unknown }).cooee = {
     async fetch(path: string, init?: { method?: string; type?: string; body?: string }) {
@@ -20,15 +25,19 @@ function herdsman(q: QueueTab, on: (p: Post) => Promise<string> | string = () =>
         assert.equal(init.type, "application/x-www-form-urlencoded");
         const p = { path, f: Object.fromEntries(new URLSearchParams(init.body)) };
         posts.push(p);
-        const text = await on(p);
-        return { status: 200, ok: true, type: "application/json", text };
+        const text = await on(p), ok = JSON.parse(text).code !== "UNPAIRED";
+        return { status: ok ? 200 : 401, ok, type: "application/json", text };
       }
-      assert.equal(path, "/api/v1/queue");
+      if (path !== "/api/v1/queue") {
+        other.push(path);
+        const m = /^\/api\/v1\/issue\/([^/]+)\/(\d+)$/.exec(path), text = served[path] ?? (m && JSON.stringify({ fleet: m[1], issue: +m[2], verdicts: [] }));
+        return text == null ? { status: 404, ok: false, type: "text/plain", text: "no such path" } : { status: 200, ok: true, type: "text/plain", text };
+      }
       gets++;
       return { status: 200, ok: true, type: "application/json", text: JSON.stringify(q) };
     },
   };
-  return { posts, gets: () => gets };
+  return { posts, gets: () => gets, other };
 }
 
 /** The tab loaded from the fake herdsman: its current tree, and finders over it. */
@@ -282,4 +291,68 @@ test("48: the [?] legend explains every state and dot; serial groups' 🔒 tags"
   assert.match(v.all(), /🔒db one at a time: touches src\/db\/\*\*/);
   const state = v.els().find((e) => e.a.title?.toString().startsWith("impl ="));
   assert.equal(state?.a.title, "impl = being built", "a state word's title is its hint");
+});
+
+test("14: a row in verify(1) is in progress with its verify lane; its card shows the mark and note", async () => {
+  const h = herdsman(raw);
+  const v = await open();
+  v.t.step(2);
+  assert.equal(row(raw, 2, 2).state, "verify(1)", "the recorded fixture: fleet-3 #2 in verify(1)");
+  assert.match(v.all(), /in progress \(1\)● #2 verify\(1\) in verify /);
+  assert.equal(v.els().find((e) => text(e) === "verify(1)")?.a.title, "verify(n) = being tried in the real app, round n");
+  assert.match(v.all(), /#2 verify\(1\) .*verify on/, "the mark set on shows on the row");
+  await v.tap(at(2));
+  assert.deepEqual(h.other, ["/api/v1/issue/fleet-3/2"], "opening reads its verdicts");
+  assert.match(v.all(), /VERIFYverify: on · verify\(1\)/);
+  assert.match(v.all(), /◆ rev ✓ ─ ◆ verify/);
+  assert.equal(v.els().find((e) => e.a.class === "ql")?.a.href, "/p/drover-lanes#lane/fleet-3-verify-2");
+});
+
+test("14: a row whose verify was skipped shows why", async () => {
+  herdsman(raw);
+  const v = await open();
+  v.t.step(1);
+  const tag = v.els().find((e) => e.a.class === "tag a");
+  assert.equal(tag && text(tag), "verify skipped: no .herdsman/verify.md");
+  assert.match(v.all(), /#9 parked .*verify skipped: no \.herdsman\/verify\.md/);
+});
+
+test("14: a mark by UI paths; [verify on] posts qset; off shows on its row; unpaired, the tap answers UNPAIRED", async () => {
+  const q = copy();
+  const h = herdsman(q, ({ f }) => {
+    if (f.value === "off") return '{"ok":false,"code":"UNPAIRED","message":"pair this device first"}';
+    q.fleets[0].marks[f.issue].verify = f.value;
+    return `{"ok":true,"code":"OK","message":"#${f.issue}: ${f.key} ${f.value}"}`;
+  });
+  const v = await open();
+  assert.match(v.all(), /#30 queued #1 title textverify off/);
+  await v.tap(at(32));
+  assert.match(v.all(), /VERIFYverify: by UI paths/);
+  await v.tap("verify on");
+  assert.deepEqual(h.posts[0], { path: "/api/v1/qset", f: { op: "qset", fleet: "fleet-1", mtime: q.mtime, issue: "32", key: "verify", value: "on" } });
+  assert.match(v.all(), /#32: verify on/);
+  assert.match(v.all(), /VERIFYverify: on/, "the reloaded queue's mark");
+  assert.equal(v.els().find((e) => text(e) === "verify on" && e.t === "button")?.a["aria-pressed"], "true");
+  await v.tap("verify off");
+  assert.match(v.all(), /UNPAIRED: pair this device first/);
+  assert.match(v.all(), /VERIFYverify: on/, "unchanged");
+});
+
+test("14: the issue sheet: verdicts newest first, a verify PASS's 1440 and 390 screenshots inline, the design beside", async () => {
+  const shot = (i: number) => `data:image/png;base64,SHOT${i}`;
+  const h = herdsman(raw, undefined, {
+    "/api/v1/issue/fleet-1/22": JSON.stringify(rawIssue), "/shot/fleet-1/22/0": shot(0), "/shot/fleet-1/22/1": shot(1),
+    "/design/fleet-1/22/0": "data:image/png;base64,DESIGN",
+  });
+  const v = await open();
+  await v.tap(at(22));
+  assert.match(v.all(), /VERDICTS \(2\)verify r1 PASS 0123456findings textqueue-1440\.pngqueue-390\.pngdesign 1rev r1 PASS 0123456findings text/);
+  const imgs = v.els().filter((e) => e.t === "img").map((e) => [e.a.alt, e.a.src]);
+  assert.deepEqual(imgs, [["queue-1440.png", shot(0)], ["queue-390.png", shot(1)], ["design 1", "data:image/png;base64,DESIGN"]]);
+  assert.deepEqual(h.other, ["/api/v1/issue/fleet-1/22", "/shot/fleet-1/22/0", "/shot/fleet-1/22/1", "/design/fleet-1/22/0", "/design/fleet-1/22/1"],
+    "each screenshot, then the design's PNGs until one is missing");
+  assert.equal(v.els().find((e) => e.t === "span" && text(e) === "PASS")?.a.class, "g");
+  await v.tap(at(32));
+  assert.ok(!h.other.some((p) => p.startsWith("/design/fleet-1/32")), "no design stage, no design read");
+  assert.equal(v.els().filter((e) => e.a.class === "cd" && /VERDICTS/.test(text(e))).length, 1, "an issue with no verdicts shows none");
 });
