@@ -1,17 +1,33 @@
 // The drover-fleets tab, a test per herdsman#553 row it keeps (75, 77, 80-85; cooee-drover#5 amendment A): the real tab
 // module (`lib/fleets.ts`) and client (`lib/api.ts`) against a fake `cooee` that serves the recorded `/api/v1`
-// fixtures (`queue`, `host`, `state`, `events?since=&until=`) and records each form POST.
+// fixtures (`queue`, `host`, `state`, `events?since=&until=`, #16 `lessons` and a fleet's `digest`) and records each
+// form POST.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import type { El, Kid } from "../src/lib/dom.ts";
 import { fleetsTab } from "../src/lib/fleets.ts";
-import type { Ev, FleetsTab, HostTab, State } from "../src/lib/types.ts";
+import type { Digest, Ev, FleetsTab, HostTab, Lessons, State } from "../src/lib/types.ts";
 import { must } from "./must.ts";
 
 const fx = (n: string) => JSON.parse(fs.readFileSync(new URL(`../fixtures/${n}.json`, import.meta.url), "utf8"));
-type Api = { queue: FleetsTab; host: HostTab; state: State; events: Ev[]; down?: string };
-const api = (): Api => ({ queue: fx("queue"), host: fx("host"), state: fx("state"), events: fx("events").list });
+type Api = {
+  queue: FleetsTab;
+  host: HostTab;
+  state: State;
+  lessons: Lessons;
+  digest: Digest;
+  events: Ev[];
+  down?: string;
+};
+const api = (): Api => ({
+  queue: fx("queue"),
+  host: fx("host"),
+  state: fx("state"),
+  lessons: fx("lessons"),
+  digest: fx("digest"),
+  events: fx("events").list,
+});
 
 type Post = { path: string; f: Record<string, string> };
 /** A fake herdsman behind `cooee.fetch`; `on` answers a POST (and may change `a`); `events` pages like herdsman's. */
@@ -27,7 +43,10 @@ function herdsman(a: Api, on: (p: Post) => string = () => '{"ok":true,"code":"OK
         return { status: 200, ok: true, type: "application/json", text: on(p) };
       }
       gets.push(path);
-      const m = /^\/api\/v1\/(queue|host|state|events)(?:\?since=(\d+)&until=(\d+))?$/.exec(path);
+      const m =
+        /^\/api\/v1\/(queue|host|state|events|lessons)(?:\?since=(\d+)&until=(\d+)|\/([^/]+)\/digest\?days=7)?$/.exec(
+          path,
+        );
       assert.ok(m, `no such GET ${path}`);
       if (m[1] === a.down) return { status: 502, ok: false, type: "text/plain", text: "herdsman is unreachable" };
       const body =
@@ -37,7 +56,9 @@ function herdsman(a: Api, on: (p: Post) => string = () => '{"ok":true,"code":"OK
               refresh: false,
               list: a.events.filter((e) => e.seq > Number(m[2]) && e.seq <= Number(m[3])),
             }
-          : a[m[1] as "queue"];
+          : m[4]
+            ? { ...a.digest, fleet: decodeURIComponent(m[4]) }
+            : a[m[1] as "queue"];
       return { status: 200, ok: true, type: "application/json", text: JSON.stringify(body) };
     },
   };
@@ -320,4 +341,66 @@ test("77: fleet disk against its budget; [remove orphans] and [reap] ask first, 
   );
   assert.deepEqual(h.posts[0]?.f, { op: "reap", fleet: "", mtime: a.host.mtime });
   assert.match(v.all(), /removed 2 orphan folder\(s\).*no orphan folders, no leftover processes/);
+});
+
+/** #16: the recorded lessons with fleet-1's run merged and fleet-3's lessons off; fleet-2 has never run, as recorded. */
+const lessonsApi = () => {
+  const a = api(),
+    f = a.lessons.fleets,
+    one = must(f[0], "fleet-1"),
+    two = must(f[1], "fleet-2"),
+    three = must(f[2], "fleet-3");
+  assert.deepEqual([two.last, two.next], [null, 1794443324], "the recorded fleet that never ran");
+  one.last = { issue: 31, ts: a.state.now - 5 * 86400, state: "merged" };
+  Object.assign(three, { lessons: "off", next: null });
+  return a;
+};
+/** A fleet's LESSONS row, and its words. */
+const lrow = (v: Awaited<ReturnType<typeof open>>, fleet: string) =>
+  must(
+    v.els().find((e) => e.a.class === "rw" && e.k[0] != null && text(e.k[0]) === fleet),
+    `${fleet}'s lessons row`,
+  );
+const row = (v: Awaited<ReturnType<typeof open>>, fleet: string) => text(lrow(v, fleet));
+
+test("16: per fleet its lessons, the last run (issue, date, state) or never run, and the next due", async () => {
+  herdsman(lessonsApi());
+  const v = await open();
+  assert.match(v.all(), /LESSONS · weekly lesson runs/);
+  assert.equal(row(v, "fleet-1"), "fleet-1 weekly · last #31 nov 1 merged · next due nov 12 Run lessonsdigest");
+  assert.equal(row(v, "fleet-2"), "fleet-2 weekly · never run · first run due nov 12 Run lessonsdigest");
+  assert.equal(row(v, "fleet-3"), "fleet-3 off · never run Run lessonsdigest");
+});
+
+test("16: [Run lessons] asks first; [yes] posts `lesson`; unpaired, the tap answers UNPAIRED", async () => {
+  const { posts } = herdsman(lessonsApi(), () => '{"ok":false,"code":"UNPAIRED","message":"pair this device first"}');
+  const v = await open();
+  await v.tap("Run lessons", [lrow(v, "fleet-2")]);
+  assert.equal(posts.length, 0, "asks first");
+  assert.match(v.all(), /Run lessons for fleet-2 now\? It files a lessons issue and spawns its lane yescancel/);
+  await v.tap("yes");
+  assert.deepEqual(posts, [{ path: "/api/v1/lesson", f: { op: "lesson", fleet: "fleet-2" } }]);
+  assert.match(v.all(), /UNPAIRED: pair this device first/);
+});
+
+test("16: a read-only board offers no [Run lessons]", async () => {
+  const a = lessonsApi();
+  a.queue.rw = false;
+  herdsman(a);
+  assert.equal(row(await open(), "fleet-1"), "fleet-1 weekly · last #31 nov 1 merged · next due nov 12 digest");
+});
+
+test("16: [digest] reads the fleet's 7-day lesson digest and shows it read-only; tapped again it closes", async () => {
+  const { gets, posts } = herdsman(lessonsApi());
+  const v = await open();
+  await v.tap("digest", [lrow(v, "fleet-3")]);
+  assert.equal(gets.at(-1), "/api/v1/lessons/fleet-3/digest?days=7");
+  const pres = v.els().filter((e) => e.t === "pre");
+  assert.equal(pres.length, 1);
+  const pre = must(pres[0], "the digest");
+  assert.match(text(pre), /^# Lessons digest: fleet-1, last 7 days\n\n## Review FAIL findings/);
+  assert.equal(pre.k.length, 1, "plain text, nothing tappable");
+  await v.tap("digest", [lrow(v, "fleet-3")]);
+  assert.equal(v.els().filter((e) => e.t === "pre").length, 0);
+  assert.equal(posts.length, 0);
 });

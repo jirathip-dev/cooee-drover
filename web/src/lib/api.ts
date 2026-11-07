@@ -1,14 +1,18 @@
 // The tabs' herdsman client: every call goes through `cooee.fetch` to this backend, which forwards `/api/v1/*`.
 import {
+  type Digest,
   type Events,
   type FleetsTab,
   type HostTab,
   type IssueView,
+  type Lessons,
   type NeedsTab,
+  parseDigest,
   parseEvents,
   parseFleets,
   parseHost,
   parseIssue,
+  parseLessons,
   parseNeeds,
   parseQueue,
   parseState,
@@ -49,6 +53,10 @@ export async function needs(): Promise<NeedsTab> {
 /** herdsman#576: an issue's verdicts, newest first. */
 export const issue = async (fleet: string, n: number): Promise<IssueView> =>
   parseIssue(await get(`issue/${encodeURIComponent(fleet)}/${n}`));
+/** herdsman#576: each fleet's lesson runs; one fleet's `lesson digest` over `days`. */
+export const lessons = async (): Promise<Lessons> => parseLessons(await get("lessons"));
+export const digest = async (fleet: string, days = 7): Promise<Digest> =>
+  parseDigest(await get(`lessons/${encodeURIComponent(fleet)}/digest?days=${days}`));
 /** #259 #266: the events after `since` (up to `until`). */
 export async function events(since: number, until?: number): Promise<Events> {
   const e = parseEvents(await get(`events?since=${since}${until == null ? "" : `&until=${until}`}`));

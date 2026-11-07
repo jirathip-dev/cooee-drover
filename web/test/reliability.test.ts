@@ -50,6 +50,7 @@ const api = () => ({
   queue: fx("queue") as QueueTab,
   host: fx("host"),
   state: fx("state"),
+  lessons: fx("lessons"),
 });
 
 const text = (e: Kid): string => (typeof e === "string" ? e : e.k.map(text).join(""));
