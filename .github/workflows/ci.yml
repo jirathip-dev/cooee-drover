@@ -23,8 +23,9 @@ jobs:
       - name: public-repo hygiene
         run: scripts/hygiene.sh
 
-  # The tab modules: strict tsc, the contract test on the recorded fixtures, the bundle (committed, embedded in the
-  # binary, so `cargo build` needs no Node) and its size budget.
+  # The tab modules: strict tsc and Biome block (tsc-rs runs the same check as a trial, its result in the log only),
+  # the contract test on the recorded fixtures, the bundle (committed, embedded in the binary, so `cargo build` needs
+  # no Node) and its size budget.
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -39,12 +40,17 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: typecheck (tsc --strict)
         run: npm run check
+      - name: biome check (lint and format)
+        run: npm run lint
+      - name: tsc-rs (trial, non-blocking)
+        continue-on-error: true
+        run: npm run trial
       - name: contract test (fixtures/ from herdsman /api/v1)
         run: npm test
       - name: build, and the committed dist is that build
         run: |
           npm run build
-          git diff --exit-code -- dist || { echo "::error::web/dist is stale: run \`npm run build\` in web/ and commit"; exit 1; }
+          git diff --exit-code -- dist || { echo "::error::dist/ is stale: run npm run build"; exit 1; }
           test -z "$(git status --porcelain -- dist)" || { echo "::error::web/dist has uncommitted files"; exit 1; }
       - name: bundle-size budget per module
         run: ../scripts/bundle-size.sh

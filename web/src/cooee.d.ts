@@ -8,4 +8,5 @@ declare global {
     events(path: string, on: (e: { event: string; data: string }) => void): () => void;
   };
 }
+
 export {};

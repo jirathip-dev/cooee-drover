@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { asksTab, type Later, type Store } from "../src/lib/asks.ts";
 import type { El, Kid } from "../src/lib/dom.ts";
 import type { Blocked, Ev, Events, NeedAsk, NeedIssue, NeedsTab } from "../src/lib/types.ts";
+import { must } from "./must.ts";
 
 const fixture = (f: string) => JSON.parse(fs.readFileSync(new URL(`../fixtures/${f}.json`, import.meta.url), "utf8"));
 const raw: NeedsTab = fixture("needs");
@@ -15,8 +16,14 @@ const rawEv: Events = fixture("events");
 type Post = { path: string; f: Record<string, string> };
 const OK = '{"ok":true,"code":"OK","message":"done"}';
 /** A fake herdsman behind `cooee.fetch`: `n` its needs, `ev` its events; `on` answers a POST (and may change `n`). */
-function herdsman(n: NeedsTab, on: (p: Post) => Promise<string> | string = () => OK, ev: Ev[] = rawEv.list, imgs: Record<string, string> = {}) {
-  const posts: Post[] = [], gets: string[] = [];
+function herdsman(
+  n: NeedsTab,
+  on: (p: Post) => Promise<string> | string = () => OK,
+  ev: Ev[] = rawEv.list,
+  imgs: Record<string, string> = {},
+) {
+  const posts: Post[] = [],
+    gets: string[] = [];
   (globalThis as { cooee?: unknown }).cooee = {
     async fetch(path: string, init?: { method?: string; type?: string; body?: string }) {
       const answer = (text: string, status = 200) => ({ status, ok: status === 200, type: "application/json", text });
@@ -32,10 +39,10 @@ function herdsman(n: NeedsTab, on: (p: Post) => Promise<string> | string = () =>
       const since = /^\/api\/v1\/events\?since=(\d+)$/.exec(path);
       if (since) {
         const top = Math.max(0, ...ev.map((e) => e.seq));
-        const list = +since[1] === 0 ? [] : ev.filter((e) => e.seq > +since[1]);
-        return answer(JSON.stringify({ seq: top, refresh: +since[1] === 0, list }));
+        const list = Number(since[1]) === 0 ? [] : ev.filter((e) => e.seq > Number(since[1]));
+        return answer(JSON.stringify({ seq: top, refresh: Number(since[1]) === 0, list }));
       }
-      return path in imgs ? answer(imgs[path]) : answer("no such image", 404);
+      return path in imgs ? answer(imgs[path] ?? "") : answer("no such image", 404);
     },
   };
   return { posts, gets };
@@ -43,14 +50,24 @@ function herdsman(n: NeedsTab, on: (p: Post) => Promise<string> | string = () =>
 
 const text = (e: Kid): string => (typeof e === "string" ? e : e.k.map(text).join(""));
 const mem = (): Store & { l: Later } => {
-  const s = { l: {} as Later, get: () => structuredClone(s.l), set: (l: Later) => void (s.l = l) };
+  const s = {
+    l: {} as Later,
+    get: () => structuredClone(s.l),
+    set: (l: Later) => {
+      s.l = l;
+    },
+  };
   return s;
 };
 
 /** The tab loaded from the fake herdsman, on a fake clock: its current tree, and finders over it. */
 async function open(store: Store = mem(), clock = { t: raw.now }) {
   let kids: Kid[] = [];
-  const t = asksTab((k) => (kids = k), () => clock.t, store);
+  const t = asksTab(
+    (k) => (kids = k),
+    () => clock.t,
+    store,
+  );
   await t.load();
   await new Promise((r) => setTimeout(r)); // the images' reads
   const els = (k: Kid[] = kids): El[] => k.flatMap((x) => (typeof x === "string" ? [] : [x, ...els(x.k)]));
@@ -58,45 +75,91 @@ async function open(store: Store = mem(), clock = { t: raw.now }) {
   const one = (s: string | RegExp) => {
     const f = els().filter((e) => e.a.on && (typeof s === "string" ? text(e).startsWith(s) : s.test(text(e))));
     assert.ok(f.length, `nothing tappable reads ${s}:\n${all()}`);
-    return f.at(-1)!;
+    return must(f.at(-1));
   };
   const tap = async (s: string | RegExp) => (one(s).a.on as (v: string) => unknown)("");
   const cards = () => els().filter((e) => e.a.class === "ask");
-  const badge = () => text(els().find((e) => e.a.class?.toString().startsWith("badge"))!);
-  return { t, els, all, one, tap, cards, badge, clock };
+  const card = (i: number) => must(cards()[i], `card ${i}`);
+  const badge = () =>
+    text(
+      must(
+        els().find((e) => e.a.class?.toString().startsWith("badge")),
+        "badge",
+      ),
+    );
+  return { t, els, all, one, tap, cards, card, badge, clock };
 }
 
-const base = raw.asks[0];
-const askOf = (id: string, f: Partial<NeedAsk["ask"]> = {}, c: Partial<NeedAsk> = {}): NeedAsk =>
-  ({ ...structuredClone(base), ...c, ask: { ...structuredClone(base.ask), id, ...f } });
+const base = must(raw.asks[0]);
+const askOf = (id: string, f: Partial<NeedAsk["ask"]> = {}, c: Partial<NeedAsk> = {}): NeedAsk => ({
+  ...structuredClone(base),
+  ...c,
+  ask: { ...structuredClone(base.ask), id, ...f },
+});
 const menu = (f: Partial<NonNullable<Blocked["menu"]>> = {}): Blocked => ({
-  name: "fleet-1-impl-7", who: "fleet-1 · #7 · fleet-1-impl-7", push: false,
-  menu: { title: "Bash command", reason: "Run the tests", command: "cargo test --locked", countdown: 14, question: "Do you want to proceed?", options: ["Yes", "No"], h: "8812", ...f },
+  name: "fleet-1-impl-7",
+  who: "fleet-1 · #7 · fleet-1-impl-7",
+  push: false,
+  menu: {
+    title: "Bash command",
+    reason: "Run the tests",
+    command: "cargo test --locked",
+    countdown: 14,
+    question: "Do you want to proceed?",
+    options: ["Yes", "No"],
+    h: "8812",
+    ...f,
+  },
 });
 const nh = (f: Partial<NeedIssue> = {}): NeedIssue => ({
-  fleet: "fleet-2", issue: 9, pending: false, who: "fleet-2 · #9", title: "a title", why: "round limit reached", pass: null, stale: false,
-  fail: "a finding", pr: { pr: 12, ci: "green", verdict: "FAIL", vtone: "r", rounds: 3 }, repo: "example/repo", mergeable: "MERGEABLE",
-  merge: true, shots: [], ...f,
+  fleet: "fleet-2",
+  issue: 9,
+  pending: false,
+  who: "fleet-2 · #9",
+  title: "a title",
+  why: "round limit reached",
+  pass: null,
+  stale: false,
+  fail: "a finding",
+  pr: { pr: 12, ci: "green", verdict: "FAIL", vtone: "r", rounds: 3 },
+  repo: "example/repo",
+  mergeable: "MERGEABLE",
+  merge: true,
+  shots: [],
+  ...f,
 });
 const needs = (f: Partial<NeedsTab>): NeedsTab => ({ ...structuredClone(raw), ...f });
 
 test("63: a card per open ask with its options and free text, a count badge; a tap answers, the card goes, the badge drops", async () => {
   const n = needs({ asks: [askOf("q1", { options: ["one", "two"], recommend: 2 }), askOf("q2")] });
-  const h = herdsman(n, (p) => ((n.asks = n.asks.filter((a) => a.ask.id !== p.f.id)), OK));
+  const h = herdsman(n, (p) => {
+    n.asks = n.asks.filter((a) => a.ask.id !== p.f.id);
+    return OK;
+  });
   const v = await open();
   assert.equal(v.badge(), "2");
   assert.equal(v.cards().length, 2);
-  const btns = v.els(v.cards()[0].k).filter((e) => e.t === "button").map(text);
-  assert.deepEqual(btns.slice(0, 3), ["2. two (recommended)", "1. one", "Send"], "recommended first, then the rest and Send");
+  const btns = v
+    .els(v.card(0).k)
+    .filter((e) => e.t === "button")
+    .map(text);
+  assert.deepEqual(
+    btns.slice(0, 3),
+    ["2. two (recommended)", "1. one", "Send"],
+    "recommended first, then the rest and Send",
+  );
   await v.tap("1. one");
-  assert.deepEqual(h.posts[0], { path: "/api/v1/answer", f: { op: "answer", mtime: raw.mtime, fleet: base.ask.fleet, id: "q1", choice: "1" } });
+  assert.deepEqual(h.posts[0], {
+    path: "/api/v1/answer",
+    f: { op: "answer", mtime: raw.mtime, fleet: base.ask.fleet, id: "q1", choice: "1" },
+  });
   assert.equal(v.badge(), "1");
   assert.equal(v.cards().length, 1);
   assert.doesNotMatch(v.all(), /1\. one/);
   // Free text: typed, then Send.
-  (v.els().find((e) => e.t === "input")!.a.oninput as (s: string) => void)("ship it");
+  (must(v.els().find((e) => e.t === "input")).a.oninput as (s: string) => void)("ship it");
   await v.tap("Send");
-  assert.deepEqual(h.posts[1].f, { op: "answer", mtime: raw.mtime, fleet: base.ask.fleet, id: "q2", text: "ship it" });
+  assert.deepEqual(h.posts[1]?.f, { op: "answer", mtime: raw.mtime, fleet: base.ask.fleet, id: "q2", text: "ship it" });
   assert.equal(v.badge(), "0");
   assert.match(v.all(), /nothing needs you/);
 });
@@ -110,20 +173,35 @@ test("63: a refused answer shows herdsman's code and the card stays", async () =
 });
 
 test("64: a routine ask reads its default and countdown, an owner ask that it waits", async () => {
-  herdsman(needs({ asks: [askOf("q1", {}, { kind: "routine · defaults to 2 in 24m" }), askOf("q2", {}, { kind: "owner · waits for you" })] }));
+  herdsman(
+    needs({
+      asks: [
+        askOf("q1", {}, { kind: "routine · defaults to 2 in 24m" }),
+        askOf("q2", {}, { kind: "owner · waits for you" }),
+      ],
+    }),
+  );
   const v = await open();
-  const [r, o] = v.cards();
+  const r = v.card(0),
+    o = v.card(1);
   assert.match(text(r), /routine · defaults to 2 in 24m/);
-  assert.equal(v.els(r.k).find((e) => text(e) === "routine · defaults to 2 in 24m")!.a.class, "tag a");
-  assert.equal(v.els(o.k).find((e) => text(e) === "owner · waits for you")!.a.class, "tag r");
+  assert.equal(v.els(r.k).find((e) => text(e) === "routine · defaults to 2 in 24m")?.a.class, "tag a");
+  assert.equal(v.els(o.k).find((e) => text(e) === "owner · waits for you")?.a.class, "tag r");
 });
 
 test("65: a blocked lane's menu answered by tap, with the menu's hash (the stale-menu guard); sent, the card clears", async () => {
   const n = needs({ asks: [], blocked: [menu()] });
-  const h = herdsman(n, (p) => (p.f.h === "8812" ? ((n.blocked = []), '{"ok":true,"code":"OK","message":"sent"}') : '{"ok":false,"code":"STALE","message":"menu changed — refreshed"}'));
+  const h = herdsman(n, (p) => {
+    if (p.f.h !== "8812") return '{"ok":false,"code":"STALE","message":"menu changed — refreshed"}';
+    n.blocked = [];
+    return '{"ok":true,"code":"OK","message":"sent"}';
+  });
   const v = await open();
   await v.tap("1. Yes");
-  assert.deepEqual(h.posts[0], { path: "/api/v1/answer", f: { op: "answer", mtime: raw.mtime, agent: "fleet-1-impl-7", choice: "1", h: "8812" } });
+  assert.deepEqual(h.posts[0], {
+    path: "/api/v1/answer",
+    f: { op: "answer", mtime: raw.mtime, agent: "fleet-1-impl-7", choice: "1", h: "8812" },
+  });
   assert.match(v.all(), /sent/);
   assert.equal(v.cards().length, 0);
   // The menu changed under the card: herdsman refuses its hash, the card says so.
@@ -136,8 +214,15 @@ test("65: a blocked lane's menu answered by tap, with the menu's hash (the stale
 test("66: a permission prompt's card: title, reason, command and the auto-deny countdown, ticking", async () => {
   herdsman(needs({ asks: [], blocked: [menu()] }));
   const v = await open();
-  const c = text(v.cards()[0]);
-  for (const s of ["Bash command", "Run the tests", "cargo test --locked", "Do you want to proceed?", "auto-denies in 0:14"]) assert.ok(c.includes(s), `${s} in ${c}`);
+  const c = text(v.card(0));
+  for (const s of [
+    "Bash command",
+    "Run the tests",
+    "cargo test --locked",
+    "Do you want to proceed?",
+    "auto-denies in 0:14",
+  ])
+    assert.ok(c.includes(s), `${s} in ${c}`);
   v.clock.t += 5;
   v.t.tick();
   assert.match(v.all(), /auto-denies in 0:09/);
@@ -147,10 +232,18 @@ test("66: a permission prompt's card: title, reason, command and the auto-deny c
 });
 
 test("66: unpaired, a blocked lane shows its activity and why it can't be answered; no menu, the pane's tail", async () => {
-  herdsman(needs({ asks: [], blocked: [{ name: "a", who: "fleet-1 · #3 · a", push: true, activity: "running cargo test" }, { name: "b", who: "b", push: false, tail: "last lines" }] }));
+  herdsman(
+    needs({
+      asks: [],
+      blocked: [
+        { name: "a", who: "fleet-1 · #3 · a", push: true, activity: "running cargo test" },
+        { name: "b", who: "b", push: false, tail: "last lines" },
+      ],
+    }),
+  );
   const v = await open();
-  assert.match(text(v.cards()[0]), /running cargo test.*HERDSMAN_COOKIE/);
-  assert.match(text(v.cards()[1]), /last lines/);
+  assert.match(text(v.card(0)), /running cargo test.*HERDSMAN_COOKIE/);
+  assert.match(text(v.card(1)), /last lines/);
   assert.equal(v.els().filter((e) => /^\d\. /.test(text(e))).length, 0);
 });
 
@@ -159,18 +252,18 @@ test("67: a needs-human card: why, verdict, PR; one more round shows its pending
   let release = () => {};
   const h = herdsman(n, (p) => (p.f.op === "extend" ? new Promise((r) => (release = () => r(OK))) : OK));
   const v = await open();
-  assert.match(text(v.cards()[0]), /#9 a title · round limit reached/);
-  assert.match(text(v.cards()[0]), /FAIL: a finding · PR #12 · CI green/);
-  const pr = v.els().find((e) => text(e) === "PR #12")!;
+  assert.match(text(v.card(0)), /#9 a title · round limit reached/);
+  assert.match(text(v.card(0)), /FAIL: a finding · PR #12 · CI green/);
+  const pr = must(v.els().find((e) => text(e) === "PR #12"));
   assert.equal(pr.a.href, "https://github.com/example/repo/pull/12");
   const done = v.tap("one more round");
   assert.match(v.all(), /⟳ one more round · starting a lane…/, "before herdsman answers");
   assert.doesNotMatch(v.all(), /merge anyway/);
   release();
   await done;
-  assert.deepEqual(h.posts[0].f, { op: "extend", mtime: raw.mtime, fleet: "fleet-2", issue: "9" });
+  assert.deepEqual(h.posts[0]?.f, { op: "extend", mtime: raw.mtime, fleet: "fleet-2", issue: "9" });
   assert.match(v.all(), /⟳ one more round/, "herdsman runs extend as a job: its card may not say pending yet");
-  n.issues[0].pending = true;
+  must(n.issues[0]).pending = true;
   await v.t.load();
   assert.match(v.all(), /⟳ one more round/, "then herdsman's own pending line");
 
@@ -181,7 +274,13 @@ test("67: a needs-human card: why, verdict, PR; one more round shows its pending
   assert.equal(h.posts.length, 1, "the first tap only asks");
   await v.tap("yes, merge #10 past the round limit");
   await v.tap("park");
-  assert.deepEqual(h.posts.slice(1).map((p) => [p.f.op, p.f.issue]), [["override", "10"], ["park", "10"]]);
+  assert.deepEqual(
+    h.posts.slice(1).map((p) => [p.f.op, p.f.issue]),
+    [
+      ["override", "10"],
+      ["park", "10"],
+    ],
+  );
 });
 
 test("67: unpaired or merge not offered: the buttons that can't work don't show", async () => {
@@ -197,7 +296,8 @@ test("67: unpaired or merge not offered: the buttons that can't work don't show"
 test("68: [later] hides a card on this phone, [later all] leaves one red line; a changed card or 12 h shows it again", async () => {
   const n = needs({ blocked: [menu()], issues: [nh()], paired: true });
   herdsman(n);
-  const store = mem(), clock = { t: raw.now };
+  const store = mem(),
+    clock = { t: raw.now };
   let v = await open(store, clock);
   assert.equal(v.cards().length, 3);
   await v.tap(/^later$/);
@@ -207,14 +307,14 @@ test("68: [later] hides a card on this phone, [later all] leaves one red line; a
   assert.equal(v.cards().length, 0);
   const red = v.els().filter((e) => e.a.class === "r later");
   assert.equal(red.length, 1);
-  assert.match(text(red[0]), /^3 need you ▸/);
+  assert.match(text(must(red[0])), /^3 need you ▸/);
   assert.equal(v.badge(), "3", "the badge still counts them");
   await v.tap("3 need you");
   assert.equal(v.cards().length, 3, "a tap on the line shows them in place");
   // Another load (a reopened tab) on the same phone keeps them hidden.
   v = await open(store, clock);
   assert.equal(v.cards().length, 0);
-  n.issues[0].why = "a new finding";
+  must(n.issues[0]).why = "a new finding";
   v = await open(store, clock);
   assert.equal(v.cards().length, 1, "the changed card shows again");
   clock.t += 12 * 3600 + 1;
@@ -223,30 +323,63 @@ test("68: [later] hides a card on this phone, [later all] leaves one red line; a
 });
 
 test("69: a design review: its PNGs inline, approve / revise / reject answer the ask", async () => {
-  const d = askOf("q7", { fleet: "fleet-2", issue: 7, options: ["approve", "revise", "reject"], recommend: null }, { pngs: ["home-1440.png", "home-390.png"] });
-  const h = herdsman(needs({ asks: [d] }), undefined, rawEv.list, { "/design/fleet-2/7/0": "data:image/png;base64,AAAA", "/design/fleet-2/7/1": "data:image/png;base64,BBBB" });
+  const d = askOf(
+    "q7",
+    { fleet: "fleet-2", issue: 7, options: ["approve", "revise", "reject"], recommend: null },
+    { pngs: ["home-1440.png", "home-390.png"] },
+  );
+  const h = herdsman(needs({ asks: [d] }), undefined, rawEv.list, {
+    "/design/fleet-2/7/0": "data:image/png;base64,AAAA",
+    "/design/fleet-2/7/1": "data:image/png;base64,BBBB",
+  });
   const v = await open();
-  const imgs = v.els().filter((e) => e.t === "img").map((e) => [e.a.src, e.a.alt]);
-  assert.deepEqual(imgs, [["data:image/png;base64,AAAA", "home-1440.png"], ["data:image/png;base64,BBBB", "home-390.png"]]);
+  const imgs = v
+    .els()
+    .filter((e) => e.t === "img")
+    .map((e) => [e.a.src, e.a.alt]);
+  assert.deepEqual(imgs, [
+    ["data:image/png;base64,AAAA", "home-1440.png"],
+    ["data:image/png;base64,BBBB", "home-390.png"],
+  ]);
   assert.equal(h.gets.filter((g) => g.startsWith("/design/")).length, 2);
   await v.tap("1. approve");
-  assert.deepEqual(h.posts[0].f, { op: "answer", mtime: raw.mtime, fleet: "fleet-2", id: "q7", choice: "1" });
+  assert.deepEqual(h.posts[0]?.f, { op: "answer", mtime: raw.mtime, fleet: "fleet-2", id: "q7", choice: "1" });
   assert.equal(h.gets.filter((g) => g.startsWith("/design/")).length, 2, "each image read once");
 });
 
 test("70: a needs-human card shows the verdict's screenshots, only the ones the backend serves as images", async () => {
-  herdsman(needs({ asks: [], issues: [nh({ shots: ["a-1440.png", "b-390.png"] })] }), undefined, rawEv.list, { "/shot/fleet-2/9/0": "data:image/png;base64,CCCC", "/shot/fleet-2/9/1": "<html>not an image" });
+  herdsman(needs({ asks: [], issues: [nh({ shots: ["a-1440.png", "b-390.png"] })] }), undefined, rawEv.list, {
+    "/shot/fleet-2/9/0": "data:image/png;base64,CCCC",
+    "/shot/fleet-2/9/1": "<html>not an image",
+  });
   const v = await open();
-  assert.deepEqual(v.els().filter((e) => e.t === "img").map((e) => e.a.src), ["data:image/png;base64,CCCC"]);
+  assert.deepEqual(
+    v
+      .els()
+      .filter((e) => e.t === "img")
+      .map((e) => e.a.src),
+    ["data:image/png;base64,CCCC"],
+  );
   assert.match(v.all(), /b-390\.png/, "the missing one keeps its caption");
 });
 
 test("71: an answer herdsman couldn't deliver shows as a red undelivered line; a later delivery or a day clears it", async () => {
   const top = Math.max(...rawEv.list.map((e) => e.seq));
-  const e = (seq: number, type: string, id: string, ts = raw.now - 60): Ev =>
-    ({ ...structuredClone(rawEv.list[0]), seq, ts, type, data: { id, agent: "a", reason: "lane gone" }, plain: `fleet-1 #4 ${type}: ${id}` });
-  herdsman(needs({}), undefined, [...rawEv.list, e(top + 1, "answer-undelivered", "q8"), e(top + 2, "answer-delivered", "q8"),
-    e(top + 3, "answer-undelivered", "q9"), e(top + 4, "answer-undelivered", "q5", raw.now - 90000)]);
+  const e = (seq: number, type: string, id: string, ts = raw.now - 60): Ev => ({
+    ...structuredClone(must(rawEv.list[0])),
+    seq,
+    ts,
+    type,
+    data: { id, agent: "a", reason: "lane gone" },
+    plain: `fleet-1 #4 ${type}: ${id}`,
+  });
+  herdsman(needs({}), undefined, [
+    ...rawEv.list,
+    e(top + 1, "answer-undelivered", "q8"),
+    e(top + 2, "answer-delivered", "q8"),
+    e(top + 3, "answer-undelivered", "q9"),
+    e(top + 4, "answer-undelivered", "q5", raw.now - 90000),
+  ]);
   const v = await open();
   const lines = v.els().filter((x) => x.a.class === "r" && text(x).startsWith("undelivered"));
   assert.deepEqual(lines.map(text), ["undelivered: fleet-1 #4 answer-undelivered: q9"]);

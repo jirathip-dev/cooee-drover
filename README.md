@@ -76,4 +76,5 @@ token = "…"               # = DROVER_QUEUE_TOKEN
 ```
 
 The tabs live in `web/` (TypeScript; `npm ci && npm run build` writes the committed `web/dist/`, which the binary
-embeds). `node scripts/record-fixtures.mjs <herdsman url>` re-records the contract test's redacted fixtures.
+embeds; CI fails when it is stale). `npm run check` (tsc), `npm run lint` (Biome) and `npm test` are the gates;
+`npm run trial` runs tsc-rs, non-blocking in CI. `node scripts/record-fixtures.mjs <herdsman url>` re-records the contract test's redacted fixtures.

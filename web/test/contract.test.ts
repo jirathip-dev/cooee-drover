@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { askHref, route } from "../src/lib/links.ts";
 import { parseEvents, parseIssue, parseNeeds, parseQueue, parseState } from "../src/lib/types.ts";
 import { lanesView } from "../src/lib/views.ts";
+import { must } from "./must.ts";
 
 const raw = JSON.parse(fs.readFileSync(new URL("../fixtures/state.json", import.meta.url), "utf8"));
 const state = parseState(raw);
@@ -24,7 +25,7 @@ test("a dropped or retyped field breaks the contract, naming it", () => {
 
 test("the recorded queue fits the contract; a retyped field breaks it, naming it", () => {
   const q = JSON.parse(fs.readFileSync(new URL("../fixtures/queue.json", import.meta.url), "utf8"));
-  assert.ok(parseQueue(q).fleets[0].rows.length > 0);
+  assert.ok(must(parseQueue(q).fleets[0]).rows.length > 0);
   q.fleets[1].rows[0].stage = [{ name: "impl" }];
   assert.throws(() => parseQueue(q), /queue broke the contract at fleets\[1\]\.rows\[0\]\.stage\[0\]\.k$/);
   q.fleets[1].backlog.issues["22"].labels = "x";
@@ -37,14 +38,31 @@ test("the recorded queue fits the contract; a retyped field breaks it, naming it
 
 test("herdsman#576: the recorded issue's verdicts and the queue's marks fit the contract; a retyped field breaks it", () => {
   const q = parseQueue(JSON.parse(fs.readFileSync(new URL("../fixtures/queue.json", import.meta.url), "utf8")));
-  assert.deepEqual(q.fleets.map((c) => Object.keys(c.marks).map(Number).sort((a, b) => a - b)), q.fleets.map((c) => c.rows.map((r) => r.issue).sort((a, b) => a - b)));
+  assert.deepEqual(
+    q.fleets.map((c) =>
+      Object.keys(c.marks)
+        .map(Number)
+        .sort((a, b) => a - b),
+    ),
+    q.fleets.map((c) => c.rows.map((r) => r.issue).sort((a, b) => a - b)),
+  );
   const i = JSON.parse(fs.readFileSync(new URL("../fixtures/issue.json", import.meta.url), "utf8"));
-  assert.deepEqual(parseIssue(i).verdicts.map((v) => [v.role, v.verdict, v.shots.length]), [["verify", "PASS", 2], ["rev", "PASS", 0]]);
+  assert.deepEqual(
+    parseIssue(i).verdicts.map((v) => [v.role, v.verdict, v.shots.length]),
+    [
+      ["verify", "PASS", 2],
+      ["rev", "PASS", 0],
+    ],
+  );
   i.verdicts[0].shots = [1];
   assert.throws(() => parseIssue(i), /issue broke the contract at verdicts\[0\]\.shots\[0\]$/);
   i.verdicts[0].shots = [];
-  assert.deepEqual(parseIssue(i).verdicts.map((v) => v.repro?.kind ?? null), [null, "run"], "#15: the rev PASS's Repro: block");
-  assert.equal(q.fleets[0].marks["22"].repro, true);
+  assert.deepEqual(
+    parseIssue(i).verdicts.map((v) => v.repro?.kind ?? null),
+    [null, "run"],
+    "#15: the rev PASS's Repro: block",
+  );
+  assert.equal(q.fleets[0]?.marks["22"]?.repro, true);
   i.verdicts[1].repro.text = ["x"];
   assert.throws(() => parseIssue(i), /issue broke the contract at verdicts\[1\]\.repro\.text$/);
 });
@@ -65,16 +83,25 @@ test("the recorded needs and events fit the contract; a retyped field breaks it,
 
 test("a verify lane shows under its own role, like rev", () => {
   const lane = (name: string, role: string) => ({ ...raw.lanes[0], name, role });
-  const s = parseState({ ...raw, lanes: [lane("f-impl-1", "impl"), lane("f-rev-1", "rev"), lane("f-verify-1", "verify"), lane("f-impl-2", "impl")] });
-  assert.deepEqual(lanesView(s).map((x) => [x.title, x.items.map((l) => l.text.split(" ")[0])]), [
-    ["impl", ["f-impl-1", "f-impl-2"]], ["rev", ["f-rev-1"]], ["verify", ["f-verify-1"]],
-  ]);
+  const s = parseState({
+    ...raw,
+    lanes: [lane("f-impl-1", "impl"), lane("f-rev-1", "rev"), lane("f-verify-1", "verify"), lane("f-impl-2", "impl")],
+  });
+  assert.deepEqual(
+    lanesView(s).map((x) => [x.title, x.items.map((l) => l.text.split(" ")[0])]),
+    [
+      ["impl", ["f-impl-1", "f-impl-2"]],
+      ["rev", ["f-rev-1"]],
+      ["verify", ["f-verify-1"]],
+    ],
+  );
 });
 
 test("lanes and asks link across tabs, and the link's hash routes back", () => {
-  const lane = lanesView(state)[0].items[0];
+  const lane = must(lanesView(state)[0]?.items[0]),
+    href = must(lane.href);
   assert.equal(lane.href, `/p/drover-lanes#lane/${raw.lanes[0].name}`);
-  assert.deepEqual(route(lane.href!.slice(lane.href!.indexOf("#"))), { kind: "lane", id: raw.lanes[0].name });
+  assert.deepEqual(route(href.slice(href.indexOf("#"))), { kind: "lane", id: raw.lanes[0].name });
   assert.equal(askHref(raw.asks[0].id), `/p/drover-asks#ask/${raw.asks[0].id}`);
   assert.equal(route("#queue"), null);
 });

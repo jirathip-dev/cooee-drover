@@ -9,5 +9,5 @@ export const threadHref = (id: string): string => `/t/${encodeURIComponent(id)}`
 /** The route a tab's `location.hash` names, if any. */
 export function route(hash: string): Route | null {
   const m = /^#(lane|ask)\/(.+)$/.exec(hash);
-  return m ? { kind: m[1] as Route["kind"], id: decodeURIComponent(m[2]) } : null;
+  return m ? { kind: m[1] as Route["kind"], id: decodeURIComponent(m[2] ?? "") } : null;
 }
