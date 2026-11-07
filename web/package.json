@@ -9,8 +9,10 @@
     "test": "node --test \"test/*.test.ts\""
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.6",
     "@types/node": "24.19.2",
     "esbuild": "0.28.2",
+    "tsc-rs": "0.8.0",
     "typescript": "7.0.2"
   }
 }
