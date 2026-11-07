@@ -37,13 +37,30 @@ test("the recorded queue fits the contract; a retyped field breaks it, naming it
 
 test("herdsman#576: the recorded issue's verdicts and the queue's marks fit the contract; a retyped field breaks it", () => {
   const q = parseQueue(JSON.parse(fs.readFileSync(new URL("../fixtures/queue.json", import.meta.url), "utf8")));
-  assert.deepEqual(q.fleets.map((c) => Object.keys(c.marks).map(Number).sort((a, b) => a - b)), q.fleets.map((c) => c.rows.map((r) => r.issue).sort((a, b) => a - b)));
+  assert.deepEqual(
+    q.fleets.map((c) =>
+      Object.keys(c.marks)
+        .map(Number)
+        .sort((a, b) => a - b),
+    ),
+    q.fleets.map((c) => c.rows.map((r) => r.issue).sort((a, b) => a - b)),
+  );
   const i = JSON.parse(fs.readFileSync(new URL("../fixtures/issue.json", import.meta.url), "utf8"));
-  assert.deepEqual(parseIssue(i).verdicts.map((v) => [v.role, v.verdict, v.shots.length]), [["verify", "PASS", 2], ["rev", "PASS", 0]]);
+  assert.deepEqual(
+    parseIssue(i).verdicts.map((v) => [v.role, v.verdict, v.shots.length]),
+    [
+      ["verify", "PASS", 2],
+      ["rev", "PASS", 0],
+    ],
+  );
   i.verdicts[0].shots = [1];
   assert.throws(() => parseIssue(i), /issue broke the contract at verdicts\[0\]\.shots\[0\]$/);
   i.verdicts[0].shots = [];
-  assert.deepEqual(parseIssue(i).verdicts.map((v) => v.repro?.kind ?? null), [null, "run"], "#15: the rev PASS's Repro: block");
+  assert.deepEqual(
+    parseIssue(i).verdicts.map((v) => v.repro?.kind ?? null),
+    [null, "run"],
+    "#15: the rev PASS's Repro: block",
+  );
   assert.equal(q.fleets[0].marks["22"].repro, true);
   i.verdicts[1].repro.text = ["x"];
   assert.throws(() => parseIssue(i), /issue broke the contract at verdicts\[1\]\.repro\.text$/);
@@ -65,10 +82,18 @@ test("the recorded needs and events fit the contract; a retyped field breaks it,
 
 test("a verify lane shows under its own role, like rev", () => {
   const lane = (name: string, role: string) => ({ ...raw.lanes[0], name, role });
-  const s = parseState({ ...raw, lanes: [lane("f-impl-1", "impl"), lane("f-rev-1", "rev"), lane("f-verify-1", "verify"), lane("f-impl-2", "impl")] });
-  assert.deepEqual(lanesView(s).map((x) => [x.title, x.items.map((l) => l.text.split(" ")[0])]), [
-    ["impl", ["f-impl-1", "f-impl-2"]], ["rev", ["f-rev-1"]], ["verify", ["f-verify-1"]],
-  ]);
+  const s = parseState({
+    ...raw,
+    lanes: [lane("f-impl-1", "impl"), lane("f-rev-1", "rev"), lane("f-verify-1", "verify"), lane("f-impl-2", "impl")],
+  });
+  assert.deepEqual(
+    lanesView(s).map((x) => [x.title, x.items.map((l) => l.text.split(" ")[0])]),
+    [
+      ["impl", ["f-impl-1", "f-impl-2"]],
+      ["rev", ["f-rev-1"]],
+      ["verify", ["f-verify-1"]],
+    ],
+  );
 });
 
 test("lanes and asks link across tabs, and the link's hash routes back", () => {

@@ -18,14 +18,16 @@ function node(n: Kid): Node {
       e.addEventListener(k === "on" ? "click" : "input", () => v((e as HTMLInputElement).value));
     } else if (v != null) e.setAttribute(k, v);
   }
-  if (n.t === "input") (e as HTMLInputElement).value = n.a.value as string ?? "";
+  if (n.t === "input") (e as HTMLInputElement).value = (n.a.value as string) ?? "";
   e.append(...n.k.map(node));
   return e;
 }
 
 /** Draws `kids` as the frame's body with `css`; the focused field (by `id`) keeps its focus and caret. */
 export function mount(kids: Kid[], css: string): void {
-  const f = document.activeElement as HTMLInputElement | null, id = f?.id, at = f?.selectionStart;
+  const f = document.activeElement as HTMLInputElement | null,
+    id = f?.id,
+    at = f?.selectionStart;
   document.head.replaceChildren(Object.assign(document.createElement("style"), { textContent: css }));
   document.body.replaceChildren(...kids.map(node));
   const g = id ? (document.getElementById(id) as HTMLInputElement | null) : null;

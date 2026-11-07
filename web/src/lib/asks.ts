@@ -51,10 +51,18 @@ export function undelivered(list: Ev[], now: number): Ev[] {
  * them again. `tick` redraws while a countdown runs.
  */
 export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 1000, store = phone()) {
-  let d: NeedsTab | null = null, err = "", at = 0, since = -1, tries: Ev[] = [], unfold = false, slow = false;
-  const text: Record<string, string> = {}, imgs: Record<string, string> = {};
+  let d: NeedsTab | null = null,
+    err = "",
+    at = 0,
+    since = -1,
+    tries: Ev[] = [],
+    unfold = false,
+    slow = false;
+  const text: Record<string, string> = {},
+    imgs: Record<string, string> = {};
   let msg: [string, string] = ["", ""];
-  const pending = new Set<string>(), sure = new Set<string>();
+  const pending = new Set<string>(),
+    sure = new Set<string>();
   const redraw = () => draw([...strip(slow), ...(d ? view(d) : err ? [h("p", { class: "r" }, err)] : [])]);
   const load = async () => {
     const done = late((s) => ((slow = s), s && redraw()));
@@ -63,10 +71,13 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
       // #143: the answers' delivery tries, from the newest 500 events on, then only the new ones.
       if (since < 0) since = Math.max(0, (await events(0)).seq - 500);
       const e = await events(since);
-      if (!e.refresh) (tries = uniq([...tries, ...e.list.filter((x) => x.type.startsWith("answer-"))], (x) => x.seq)), (since = e.seq);
+      if (!e.refresh)
+        (tries = uniq([...tries, ...e.list.filter((x) => x.type.startsWith("answer-"))], (x) => x.seq)),
+          (since = e.seq);
       at = clock();
       // A recorded one more round is herdsman's line from now on.
-      for (const k of pending) if (!d.issues.some((s) => `nh:${s.fleet}#${s.issue}` === k && !s.pending)) pending.delete(k);
+      for (const k of pending)
+        if (!d.issues.some((s) => `nh:${s.fleet}#${s.issue}` === k && !s.pending)) pending.delete(k);
     } catch (e) {
       (d = null), (err = String(e));
     }
@@ -88,7 +99,9 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
   const pngs = (a: NeedAsk) => img("design", a.ask.fleet, a.ask.issue ?? 0, a.pngs, a.ask.id);
   const shots = (s: NeedIssue) => img("shot", s.fleet, s.issue, s.shots, `${s.pass}${s.fail}`);
   const figs = (list: string[][]) =>
-    list.map(([, n, k]) => h("figure", {}, imgs[k] && h("img", { src: imgs[k], alt: n }), h("figcaption", { class: "m" }, n)));
+    list.map(([, n, k]) =>
+      h("figure", {}, imgs[k] && h("img", { src: imgs[k], alt: n }), h("figcaption", { class: "m" }, n)),
+    );
 
   const hide = (cards: Card[]) => () => {
     const l = store.get();
@@ -98,57 +111,131 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
   };
   type Bit = Kid | false | null | undefined;
   type Card = { key: string; sig: string; body: Bit[] };
-  const head = (who: string, ...k: (Kid | false | null | undefined)[]) => h("p", {}, h("b", {}, "needs you "), span("m", who), ...k);
+  const head = (who: string, ...k: (Kid | false | null | undefined)[]) =>
+    h("p", {}, h("b", {}, "needs you "), span("m", who), ...k);
 
   // #40 #81 #99 #412: an ask: its kind (routine: defaults to N in Tm), a design's PNGs, options recommended first, free text.
   const ask = (a: NeedAsk): Card => {
-    const x = a.ask, key = `ask:${x.id}`, go = (f: Record<string, string>) => op(key, "answer", { fleet: x.fleet, id: x.id, ...f });
-    const opts = x.options.map((o, i) => [o, i + 1] as const).sort((p, q) => +(p[1] !== x.recommend) - +(q[1] !== x.recommend));
+    const x = a.ask,
+      key = `ask:${x.id}`,
+      go = (f: Record<string, string>) => op(key, "answer", { fleet: x.fleet, id: x.id, ...f });
+    const opts = x.options
+      .map((o, i) => [o, i + 1] as const)
+      .sort((p, q) => +(p[1] !== x.recommend) - +(q[1] !== x.recommend));
     return {
-      key, sig: JSON.stringify([x.question, x.options]), body: [
-        head(a.who, " ", span(a.kind.startsWith("routine") ? "tag a" : "tag r", a.kind), a.from != null && span("m", ` · imported from ${a.from}`)),
-        h("p", {}, x.question, a.thread != null && span("m", " · ", h("a", { href: threadHref(a.thread), target: "_top" }, `asked in ${a.title || a.thread} · ${a.thread}`))),
+      key,
+      sig: JSON.stringify([x.question, x.options]),
+      body: [
+        head(
+          a.who,
+          " ",
+          span(a.kind.startsWith("routine") ? "tag a" : "tag r", a.kind),
+          a.from != null && span("m", ` · imported from ${a.from}`),
+        ),
+        h(
+          "p",
+          {},
+          x.question,
+          a.thread != null &&
+            span(
+              "m",
+              " · ",
+              h("a", { href: threadHref(a.thread), target: "_top" }, `asked in ${a.title || a.thread} · ${a.thread}`),
+            ),
+        ),
         ...figs(pngs(a)),
-        d!.rw && h("p", { class: "btns" },
-          ...opts.map(([o, n]) => h("button", { on: go({ choice: String(n) }) }, `${n}. ${o}${n === x.recommend ? " (recommended)" : ""}`)),
-          h("input", { id: `t-${x.id}`, placeholder: "or type an answer", value: text[x.id] ?? "", oninput: (v) => (text[x.id] = v) }),
-          h("button", { on: () => go({ text: text[x.id] ?? "" })() }, "Send")),
+        d!.rw &&
+          h(
+            "p",
+            { class: "btns" },
+            ...opts.map(([o, n]) =>
+              h("button", { on: go({ choice: String(n) }) }, `${n}. ${o}${n === x.recommend ? " (recommended)" : ""}`),
+            ),
+            h("input", {
+              id: `t-${x.id}`,
+              placeholder: "or type an answer",
+              value: text[x.id] ?? "",
+              oninput: (v) => (text[x.id] = v),
+            }),
+            h("button", { on: () => go({ text: text[x.id] ?? "" })() }, "Send"),
+          ),
       ],
     };
   };
   // #42 #127: a blocked lane: a permission prompt's reason, command and auto-deny countdown, its menu by tap (`h`:
   // herdsman refuses a menu that changed since); else the pane's last lines; unpaired, its activity.
   const blocked = (b: Blocked): Card => {
-    const key = `prompt:${b.name}`, m = b.menu;
+    const key = `prompt:${b.name}`,
+      m = b.menu;
     const body: Bit[] = [head(b.who)];
-    if (b.activity != null) body.push(h("p", { class: "m" }, b.activity), h("p", { class: "m" }, "unpaired: the backend's HERDSMAN_COOKIE is no paired device, so it can't answer"));
+    if (b.activity != null)
+      body.push(
+        h("p", { class: "m" }, b.activity),
+        h("p", { class: "m" }, "unpaired: the backend's HERDSMAN_COOKIE is no paired device, so it can't answer"),
+      );
     else if (m != null) {
       const left = m.countdown == null ? null : Math.max(0, Math.round(m.countdown - (clock() - at)));
-      body.push(h("p", {}, h("b", {}, m.title)), h("p", {}, m.reason), h("code", {}, m.command),
-        left != null && h("p", { class: "r" }, `auto-denies in ${mmss(left)}`), h("p", {}, m.question),
-        d!.rw && h("p", { class: "btns" }, ...m.options.map((o, i) =>
-          h("button", { on: op(key, "answer", { agent: b.name, choice: String(i + 1), h: m.h }) }, `${i + 1}. ${o}`))));
+      body.push(
+        h("p", {}, h("b", {}, m.title)),
+        h("p", {}, m.reason),
+        h("code", {}, m.command),
+        left != null && h("p", { class: "r" }, `auto-denies in ${mmss(left)}`),
+        h("p", {}, m.question),
+        d!.rw &&
+          h(
+            "p",
+            { class: "btns" },
+            ...m.options.map((o, i) =>
+              h(
+                "button",
+                { on: op(key, "answer", { agent: b.name, choice: String(i + 1), h: m.h }) },
+                `${i + 1}. ${o}`,
+              ),
+            ),
+          ),
+      );
     } else body.push(h("pre", {}, b.tail ?? ""));
     return { key, sig: m?.h ?? b.tail ?? b.activity ?? "", body };
   };
   // #130 #151 #217 #309 #417: a needs-human issue: why, the last verdict and PR, the screenshots, then merge anyway
   // (a second tap confirms), one more round (its pending line at once), park.
   const issue = (s: NeedIssue): Card => {
-    const n = s.issue, key = `nh:${s.fleet}#${n}`, f = { fleet: s.fleet, issue: String(n) };
+    const n = s.issue,
+      key = `nh:${s.fleet}#${n}`,
+      f = { fleet: s.fleet, issue: String(n) };
     const sig = JSON.stringify([s.why, s.pass, s.fail, s.pr.verdict]);
-    if (s.pending || pending.has(key)) return { key, sig, body: [h("p", { class: "m" }, "⟳ one more round · starting a lane…")] };
-    const p = s.pr, pr: Kid[] = p.pr != null && s.repo ? [h("a", { href: `https://github.com/${s.repo}/pull/${p.pr}`, target: "_top" }, `PR #${p.pr}`)] : ["no PR"];
+    if (s.pending || pending.has(key))
+      return { key, sig, body: [h("p", { class: "m" }, "⟳ one more round · starting a lane…")] };
+    const p = s.pr,
+      pr: Kid[] =
+        p.pr != null && s.repo
+          ? [h("a", { href: `https://github.com/${s.repo}/pull/${p.pr}`, target: "_top" }, `PR #${p.pr}`)]
+          : ["no PR"];
     if (p.ci != null) pr.push(` · CI ${p.ci}`);
-    const v = s.pass != null ? [`PASS at ${s.pass.slice(0, 7)}${s.stale ? " (not the head)" : ""} · `, ...pr, ` · ${s.mergeable}`] : [`FAIL: ${s.fail} · `, ...pr];
+    const v =
+      s.pass != null
+        ? [`PASS at ${s.pass.slice(0, 7)}${s.stale ? " (not the head)" : ""} · `, ...pr, ` · ${s.mergeable}`]
+        : [`FAIL: ${s.fail} · `, ...pr];
     const ask = sure.has(key);
     const merge = () => (ask ? op(key, "override", f)() : (sure.add(key), redraw()));
     const extend = () => (pending.add(key), redraw(), op(key, "extend", f)());
     return {
-      key, sig, body: [
-        head(s.who), h("p", {}, `#${n} ${s.title} · ${s.why}`), h("p", { class: "m" }, ...v), ...figs(shots(s)),
-        d!.rw && d!.paired && h("p", { class: "btns" },
-          s.merge && h("button", { on: merge }, ask ? `yes, merge #${n} past the round limit` : "merge anyway"),
-          h("button", { on: extend }, "one more round"), h("button", { on: op(key, "park", f) }, "park")),
+      key,
+      sig,
+      body: [
+        head(s.who),
+        h("p", {}, `#${n} ${s.title} · ${s.why}`),
+        h("p", { class: "m" }, ...v),
+        ...figs(shots(s)),
+        d!.rw &&
+          d!.paired &&
+          h(
+            "p",
+            { class: "btns" },
+            s.merge && h("button", { on: merge }, ask ? `yes, merge #${n} past the round limit` : "merge anyway"),
+            h("button", { on: extend }, "one more round"),
+            h("button", { on: op(key, "park", f) }, "park"),
+          ),
       ],
     };
   };
@@ -156,17 +243,35 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
     const cards = [...d.asks.map(ask), ...d.blocked.map(blocked), ...d.issues.map(issue)];
     // #154: a card's key (its kind and who, less the age) and its content; hidden while both hold and 12 h last.
     // herdsman#447: the phone's store read once per draw, not once per card.
-    const l = store.get(), hid = (c: Card) => !!l[c.key] && l[c.key].until > clock() && l[c.key].sig === c.sig;
-    const off = cards.filter(hid), on = cards.filter((c) => !hid(c));
+    const l = store.get(),
+      hid = (c: Card) => !!l[c.key] && l[c.key].until > clock() && l[c.key].sig === c.sig;
+    const off = cards.filter(hid),
+      on = cards.filter((c) => !hid(c));
     store.set(Object.fromEntries(off.map((c) => [c.key, l[c.key]])));
-    const card = (c: Card) => h("div", { class: "ask" }, ...c.body, h("button", { class: "lat", on: hide([c]) }, "later"));
-    return h("main", {},
-      h("p", { class: "bar" }, h("b", {}, "needs you "), span(cards.length ? "badge on" : "badge", String(cards.length))),
+    const card = (c: Card) =>
+      h("div", { class: "ask" }, ...c.body, h("button", { class: "lat", on: hide([c]) }, "later"));
+    return h(
+      "main",
+      {},
+      h(
+        "p",
+        { class: "bar" },
+        h("b", {}, "needs you "),
+        span(cards.length ? "badge on" : "badge", String(cards.length)),
+      ),
       msg[1] && h("p", { class: msg[0] }, msg[1]),
       ...undelivered(tries, clock()).map((e) => h("p", { class: "r" }, `undelivered: ${e.plain}`)),
-      off.length > 0 && h("p", { class: "r later" },
-        h("button", { class: "lk", on: () => ((unfold = !unfold), redraw()) }, `${off.length} need you ${unfold ? "▾" : "▸"}`),
-        h("button", { on: hide(unfold ? cards : on) }, "later all")),
+      off.length > 0 &&
+        h(
+          "p",
+          { class: "r later" },
+          h(
+            "button",
+            { class: "lk", on: () => ((unfold = !unfold), redraw()) },
+            `${off.length} need you ${unfold ? "▾" : "▸"}`,
+          ),
+          h("button", { on: hide(unfold ? cards : on) }, "later all"),
+        ),
       off.length === 0 && on.length > 1 && h("p", {}, h("button", { on: hide(on) }, "later all")),
       ...(unfold ? cards : on).map(card),
       !cards.length && h("p", { class: "m" }, "nothing needs you"),
