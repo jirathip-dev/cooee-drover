@@ -7,6 +7,7 @@ import { test } from "node:test";
 import type { El, Kid } from "../src/lib/dom.ts";
 import { fleetsTab } from "../src/lib/fleets.ts";
 import type { Ev } from "../src/lib/types.ts";
+import { must } from "./must.ts";
 
 const fx = (n: string) => JSON.parse(fs.readFileSync(new URL(`../fixtures/${n}.json`, import.meta.url), "utf8"));
 type Api = { queue: any; host: any; state: any; events: Ev[]; down?: string };
@@ -31,7 +32,11 @@ function herdsman(a: Api, on: (p: Post) => string = () => '{"ok":true,"code":"OK
       if (m[1] === a.down) return { status: 502, ok: false, type: "text/plain", text: "herdsman is unreachable" };
       const body =
         m[1] === "events"
-          ? { seq: a.state.seq, refresh: false, list: a.events.filter((e) => e.seq > +m[2] && e.seq <= +m[3]) }
+          ? {
+              seq: a.state.seq,
+              refresh: false,
+              list: a.events.filter((e) => e.seq > Number(m[2]) && e.seq <= Number(m[3])),
+            }
           : a[m[1] as "queue"];
       return { status: 200, ok: true, type: "application/json", text: JSON.stringify(body) };
     },
@@ -56,7 +61,7 @@ async function open() {
 }
 /** An event like the recorded one, at `ago` seconds before the state's `now`. */
 const ev = (a: Api, seq: number, ago: number, f: Partial<Ev> = {}): Ev => ({
-  ...a.events[0],
+  ...must(a.events[0]),
   seq,
   ts: a.state.now - ago,
   fleet: "fleet-1",
@@ -161,7 +166,7 @@ test("82: a tap on a conductor model posts `cond`; read-only shows them disabled
   const v = await open();
   await v.tap(/^fleet-1 /);
   const cg = v.els().find((e) => e.a.class === "cg" && text(e).startsWith("Conductor"))!;
-  assert.equal(v.els(cg.k).find((e) => text(e) === "claude-opus-5-5")!.a["aria-pressed"], "true");
+  assert.equal(v.els(cg.k).find((e) => text(e) === "claude-opus-5-5")?.a["aria-pressed"], "true");
   await v.tap("claude-sonnet-5-5", cg.k);
   assert.deepEqual(
     h.posts.map((p) => [p.path, p.f]),
@@ -194,7 +199,7 @@ test("83: activity: time groups, kind glyphs, [important] hides noise, folds, [o
     .filter((e) => e.t === "h3")
     .map(text);
   assert.deepEqual(hs.slice(0, 4), ["now", "5m", "1h", "yesterday"]);
-  assert.match(hs[4], /^[a-z]{3} \d+$/, "older days by date");
+  assert.match(must(hs[4]), /^[a-z]{3} \d+$/, "older days by date");
   assert.match(v.all(), /✓ fleet-1 #7 merged PR #8 1m/);
   assert.match(v.all(), /clean ×3 · lanes cleaned/);
   assert.match(v.all(), /ACTIVITY · 5 rows/);
@@ -306,6 +311,6 @@ test("77: fleet disk against its budget; [remove orphans] and [reap] ask first, 
     h.posts.map((p) => p.f.op),
     ["reap", "orphans"],
   );
-  assert.deepEqual(h.posts[0].f, { op: "reap", fleet: "", mtime: a.host.mtime });
+  assert.deepEqual(h.posts[0]?.f, { op: "reap", fleet: "", mtime: a.host.mtime });
   assert.match(v.all(), /removed 2 orphan folder\(s\).*no orphan folders, no leftover processes/);
 });

@@ -425,8 +425,9 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
     out.push(h("p", { class: "btns" }, chip("all", false), chip("important", true)));
     let at = "";
     for (const evs of rows.slice(0, ui.shown)) {
-      const e = evs[0],
-        g = when(e.ts, t.now, t.tz),
+      const e = evs[0];
+      if (!e) continue;
+      const g = when(e.ts, t.now, t.tz),
         k = `ev:${e.seq}`;
       if (g !== at) out.push(h("h3", {}, (at = g)));
       const words =

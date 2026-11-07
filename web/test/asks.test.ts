@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { asksTab, type Later, type Store } from "../src/lib/asks.ts";
 import type { El, Kid } from "../src/lib/dom.ts";
 import type { Blocked, Ev, Events, NeedAsk, NeedIssue, NeedsTab } from "../src/lib/types.ts";
+import { must } from "./must.ts";
 
 const fixture = (f: string) => JSON.parse(fs.readFileSync(new URL(`../fixtures/${f}.json`, import.meta.url), "utf8"));
 const raw: NeedsTab = fixture("needs");
@@ -38,10 +39,10 @@ function herdsman(
       const since = /^\/api\/v1\/events\?since=(\d+)$/.exec(path);
       if (since) {
         const top = Math.max(0, ...ev.map((e) => e.seq));
-        const list = +since[1] === 0 ? [] : ev.filter((e) => e.seq > +since[1]);
-        return answer(JSON.stringify({ seq: top, refresh: +since[1] === 0, list }));
+        const list = Number(since[1]) === 0 ? [] : ev.filter((e) => e.seq > Number(since[1]));
+        return answer(JSON.stringify({ seq: top, refresh: Number(since[1]) === 0, list }));
       }
-      return path in imgs ? answer(imgs[path]) : answer("no such image", 404);
+      return path in imgs ? answer(imgs[path] ?? "") : answer("no such image", 404);
     },
   };
   return { posts, gets };
@@ -68,15 +69,22 @@ async function open(store: Store = mem(), clock = { t: raw.now }) {
   const one = (s: string | RegExp) => {
     const f = els().filter((e) => e.a.on && (typeof s === "string" ? text(e).startsWith(s) : s.test(text(e))));
     assert.ok(f.length, `nothing tappable reads ${s}:\n${all()}`);
-    return f.at(-1)!;
+    return must(f.at(-1));
   };
   const tap = async (s: string | RegExp) => (one(s).a.on as (v: string) => unknown)("");
   const cards = () => els().filter((e) => e.a.class === "ask");
-  const badge = () => text(els().find((e) => e.a.class?.toString().startsWith("badge"))!);
-  return { t, els, all, one, tap, cards, badge, clock };
+  const card = (i: number) => must(cards()[i], `card ${i}`);
+  const badge = () =>
+    text(
+      must(
+        els().find((e) => e.a.class?.toString().startsWith("badge")),
+        "badge",
+      ),
+    );
+  return { t, els, all, one, tap, cards, card, badge, clock };
 }
 
-const base = raw.asks[0];
+const base = must(raw.asks[0]);
 const askOf = (id: string, f: Partial<NeedAsk["ask"]> = {}, c: Partial<NeedAsk> = {}): NeedAsk => ({
   ...structuredClone(base),
   ...c,
@@ -123,7 +131,7 @@ test("63: a card per open ask with its options and free text, a count badge; a t
   assert.equal(v.badge(), "2");
   assert.equal(v.cards().length, 2);
   const btns = v
-    .els(v.cards()[0].k)
+    .els(v.card(0).k)
     .filter((e) => e.t === "button")
     .map(text);
   assert.deepEqual(
@@ -142,7 +150,7 @@ test("63: a card per open ask with its options and free text, a count badge; a t
   // Free text: typed, then Send.
   (v.els().find((e) => e.t === "input")!.a.oninput as (s: string) => void)("ship it");
   await v.tap("Send");
-  assert.deepEqual(h.posts[1].f, { op: "answer", mtime: raw.mtime, fleet: base.ask.fleet, id: "q2", text: "ship it" });
+  assert.deepEqual(h.posts[1]?.f, { op: "answer", mtime: raw.mtime, fleet: base.ask.fleet, id: "q2", text: "ship it" });
   assert.equal(v.badge(), "0");
   assert.match(v.all(), /nothing needs you/);
 });
@@ -165,10 +173,11 @@ test("64: a routine ask reads its default and countdown, an owner ask that it wa
     }),
   );
   const v = await open();
-  const [r, o] = v.cards();
+  const r = v.card(0),
+    o = v.card(1);
   assert.match(text(r), /routine · defaults to 2 in 24m/);
-  assert.equal(v.els(r.k).find((e) => text(e) === "routine · defaults to 2 in 24m")!.a.class, "tag a");
-  assert.equal(v.els(o.k).find((e) => text(e) === "owner · waits for you")!.a.class, "tag r");
+  assert.equal(v.els(r.k).find((e) => text(e) === "routine · defaults to 2 in 24m")?.a.class, "tag a");
+  assert.equal(v.els(o.k).find((e) => text(e) === "owner · waits for you")?.a.class, "tag r");
 });
 
 test("65: a blocked lane's menu answered by tap, with the menu's hash (the stale-menu guard); sent, the card clears", async () => {
@@ -196,7 +205,7 @@ test("65: a blocked lane's menu answered by tap, with the menu's hash (the stale
 test("66: a permission prompt's card: title, reason, command and the auto-deny countdown, ticking", async () => {
   herdsman(needs({ asks: [], blocked: [menu()] }));
   const v = await open();
-  const c = text(v.cards()[0]);
+  const c = text(v.card(0));
   for (const s of [
     "Bash command",
     "Run the tests",
@@ -224,8 +233,8 @@ test("66: unpaired, a blocked lane shows its activity and why it can't be answer
     }),
   );
   const v = await open();
-  assert.match(text(v.cards()[0]), /running cargo test.*HERDSMAN_COOKIE/);
-  assert.match(text(v.cards()[1]), /last lines/);
+  assert.match(text(v.card(0)), /running cargo test.*HERDSMAN_COOKIE/);
+  assert.match(text(v.card(1)), /last lines/);
   assert.equal(v.els().filter((e) => /^\d\. /.test(text(e))).length, 0);
 });
 
@@ -234,8 +243,8 @@ test("67: a needs-human card: why, verdict, PR; one more round shows its pending
   let release = () => {};
   const h = herdsman(n, (p) => (p.f.op === "extend" ? new Promise((r) => (release = () => r(OK))) : OK));
   const v = await open();
-  assert.match(text(v.cards()[0]), /#9 a title · round limit reached/);
-  assert.match(text(v.cards()[0]), /FAIL: a finding · PR #12 · CI green/);
+  assert.match(text(v.card(0)), /#9 a title · round limit reached/);
+  assert.match(text(v.card(0)), /FAIL: a finding · PR #12 · CI green/);
   const pr = v.els().find((e) => text(e) === "PR #12")!;
   assert.equal(pr.a.href, "https://github.com/example/repo/pull/12");
   const done = v.tap("one more round");
@@ -243,9 +252,9 @@ test("67: a needs-human card: why, verdict, PR; one more round shows its pending
   assert.doesNotMatch(v.all(), /merge anyway/);
   release();
   await done;
-  assert.deepEqual(h.posts[0].f, { op: "extend", mtime: raw.mtime, fleet: "fleet-2", issue: "9" });
+  assert.deepEqual(h.posts[0]?.f, { op: "extend", mtime: raw.mtime, fleet: "fleet-2", issue: "9" });
   assert.match(v.all(), /⟳ one more round/, "herdsman runs extend as a job: its card may not say pending yet");
-  n.issues[0].pending = true;
+  must(n.issues[0]).pending = true;
   await v.t.load();
   assert.match(v.all(), /⟳ one more round/, "then herdsman's own pending line");
 
@@ -289,14 +298,14 @@ test("68: [later] hides a card on this phone, [later all] leaves one red line; a
   assert.equal(v.cards().length, 0);
   const red = v.els().filter((e) => e.a.class === "r later");
   assert.equal(red.length, 1);
-  assert.match(text(red[0]), /^3 need you ▸/);
+  assert.match(text(must(red[0])), /^3 need you ▸/);
   assert.equal(v.badge(), "3", "the badge still counts them");
   await v.tap("3 need you");
   assert.equal(v.cards().length, 3, "a tap on the line shows them in place");
   // Another load (a reopened tab) on the same phone keeps them hidden.
   v = await open(store, clock);
   assert.equal(v.cards().length, 0);
-  n.issues[0].why = "a new finding";
+  must(n.issues[0]).why = "a new finding";
   v = await open(store, clock);
   assert.equal(v.cards().length, 1, "the changed card shows again");
   clock.t += 12 * 3600 + 1;
@@ -325,7 +334,7 @@ test("69: a design review: its PNGs inline, approve / revise / reject answer the
   ]);
   assert.equal(h.gets.filter((g) => g.startsWith("/design/")).length, 2);
   await v.tap("1. approve");
-  assert.deepEqual(h.posts[0].f, { op: "answer", mtime: raw.mtime, fleet: "fleet-2", id: "q7", choice: "1" });
+  assert.deepEqual(h.posts[0]?.f, { op: "answer", mtime: raw.mtime, fleet: "fleet-2", id: "q7", choice: "1" });
   assert.equal(h.gets.filter((g) => g.startsWith("/design/")).length, 2, "each image read once");
 });
 
@@ -348,7 +357,7 @@ test("70: a needs-human card shows the verdict's screenshots, only the ones the 
 test("71: an answer herdsman couldn't deliver shows as a red undelivered line; a later delivery or a day clears it", async () => {
   const top = Math.max(...rawEv.list.map((e) => e.seq));
   const e = (seq: number, type: string, id: string, ts = raw.now - 60): Ev => ({
-    ...structuredClone(rawEv.list[0]),
+    ...structuredClone(must(rawEv.list[0])),
     seq,
     ts,
     type,

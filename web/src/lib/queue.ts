@@ -35,10 +35,10 @@ export const HINT: Record<string, string> = {
   done: "its lane finished its turn",
 };
 const DOTS = ["● a lane is on it", "○ waiting", "✓ ready", "! needs you"];
-const word = (s: string) => {
+const word = (s: string): string => {
   const w = s
     .trim()
-    .split(/[\s·]/)[0]
+    .replace(/[\s·].*$/s, "")
     .replace(/\(\d+\)/, "(n)");
   return /^(needs-human|blocked|⏸)/.test(w) ? "needs you" : w;
 };
@@ -112,7 +112,7 @@ export function backlog(c: QueueCard, now: number, s: Bl): { all: BRow[]; shown:
     .sort((a, b) => b.n - a.n);
   const pass = (d: BRow) =>
     (!s.label || d.labels.includes(s.label)) &&
-    s.on.every((k) => BF[k](d)) &&
+    s.on.every((k) => BF[k]?.(d)) &&
     s.q
       .toLowerCase()
       .split(/\s+/)
@@ -181,9 +181,9 @@ export function queueTab(draw: (kids: Kid[]) => void) {
   const step = (k: number) => {
     const ns = names(),
       i = ns.indexOf(picked());
-    pick(ns[(((i + k) % ns.length) + ns.length) % ns.length])();
+    pick(ns[(((i + k) % ns.length) + ns.length) % ns.length] ?? "all")();
   };
-  const picked = () => (names().includes(ui.repo) ? ui.repo : names()[0]);
+  const picked = () => (names().includes(ui.repo) ? ui.repo : (names()[0] ?? "all"));
 
   // #173: `○ ─ ▲ impl ─ ◆ rev ─ ◫ gates ─ ✓ merge`, the current stage lit.
   const stages = (r: QueueRow) => {
@@ -430,8 +430,11 @@ export function queueTab(draw: (kids: Kid[]) => void) {
   // #367 #391: the queued group: each root and its blocked steps one item, a chain one row (`chain · N`, its place,
   // `#first → #last · next: #b (state)`); its place numbers; past 5, `+ N more` opens the rest in place.
   const queued = (c: QueueCard, ns: Node[]) => {
-    const items: Node[][] = [];
-    for (const n of ns) n.depth && items.length ? items.at(-1)!.push(n) : items.push([n]);
+    const items: [Node, ...Node[]][] = [];
+    for (const n of ns) {
+      const last = items.at(-1);
+      n.depth && last ? last.push(n) : items.push([n]);
+    }
     const tops = items.map((it, i) => {
       if (it.length === 1) return row(c, it[0], `#${i + 1}`);
       const [f] = it,
@@ -452,7 +455,7 @@ export function queueTab(draw: (kids: Kid[]) => void) {
           span("m", `#${i + 1}`),
           " ",
           span("tl", f.r.title ?? ""),
-          h("div", { class: "m cst" }, `#${f.r.issue} → #${it.at(-1)!.r.issue} · next: #${nb}${ph}`),
+          h("div", { class: "m cst" }, `#${f.r.issue} → #${(it.at(-1) ?? f).r.issue} · next: #${nb}${ph}`),
         ),
         ...(ui.open.has(key) ? it.map((n) => row(c, n, "")) : []),
       );

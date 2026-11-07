@@ -596,14 +596,22 @@ const ISSUE = {
 function fits(v: unknown, s: Spec, at: string): string | null {
   if (typeof s === "string")
     return (s.endsWith("?") ? v == null || typeof v === s.slice(0, -1) : typeof v === s) ? null : at;
-  if (Array.isArray(s))
-    return Array.isArray(v) ? v.reduce((e: string | null, x, i) => e ?? fits(x, s[0], `${at}[${i}]`), null) : at;
+  if (Array.isArray(s)) {
+    const [el] = s;
+    return Array.isArray(v) && el !== undefined
+      ? v.reduce((e: string | null, x, i) => e ?? fits(x, el, `${at}[${i}]`), null)
+      : at;
+  }
   if (v == null && "?" in s) return null;
   if (typeof v !== "object" || v === null || Array.isArray(v)) return at || "the top";
   const o = v as Record<string, unknown>,
     dot = (k: string) => (at ? `${at}.${k}` : k);
-  if ("*" in s) return Object.keys(o).reduce((e: string | null, k) => e ?? fits(o[k], s["*"], dot(k)), null);
-  return Object.keys(s).reduce((e: string | null, k) => e ?? (k === "?" ? null : fits(o[k], s[k], dot(k))), null);
+  const all = s["*"];
+  if (all !== undefined) return Object.keys(o).reduce((e: string | null, k) => e ?? fits(o[k], all, dot(k)), null);
+  return Object.entries(s).reduce(
+    (e: string | null, [k, sk]) => e ?? (k === "?" ? null : fits(o[k], sk, dot(k))),
+    null,
+  );
 }
 
 /** `json` as herdsman's `/api/v1/<path>` answer, or an error naming the first field that breaks the contract. */

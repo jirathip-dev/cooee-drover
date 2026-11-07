@@ -11,6 +11,7 @@ import type { Blocked, Ev, NeedAsk, NeedIssue, NeedsTab, Reply } from "./types.t
 /** #154: the cards hidden on this phone: key → until (s) and the card's content then (`sig`); a changed card shows. */
 export type Later = Record<string, { until: number; sig: string }>;
 export type Store = { get(): Later; set(l: Later): void };
+type Img = [path: string, name: string, key: string];
 
 /** The phone's localStorage when the frame has one (cooee's sandboxed frame has an opaque origin: then memory). */
 export function phone(): Store {
@@ -95,10 +96,13 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
   };
   // An image: its path, name and cache key.
   const img = (kind: string, fleet: string, n: number, names: string[], v: string) =>
-    names.map((name, i) => [`/${kind}/${enc(fleet)}/${n}/${i}`, name]).map(([p, name]) => [p, name, `${p} ${v}`]);
+    names.map((name, i): Img => {
+      const p = `/${kind}/${enc(fleet)}/${n}/${i}`;
+      return [p, name, `${p} ${v}`];
+    });
   const pngs = (a: NeedAsk) => img("design", a.ask.fleet, a.ask.issue ?? 0, a.pngs, a.ask.id);
   const shots = (s: NeedIssue) => img("shot", s.fleet, s.issue, s.shots, `${s.pass}${s.fail}`);
-  const figs = (list: string[][]) =>
+  const figs = (list: Img[]) =>
     list.map(([, n, k]) =>
       h("figure", {}, imgs[k] && h("img", { src: imgs[k], alt: n }), h("figcaption", { class: "m" }, n)),
     );
@@ -244,10 +248,13 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
     // #154: a card's key (its kind and who, less the age) and its content; hidden while both hold and 12 h last.
     // herdsman#447: the phone's store read once per draw, not once per card.
     const l = store.get(),
-      hid = (c: Card) => !!l[c.key] && l[c.key].until > clock() && l[c.key].sig === c.sig;
+      hid = (c: Card) => {
+        const e = l[c.key];
+        return !!e && e.until > clock() && e.sig === c.sig;
+      };
     const off = cards.filter(hid),
       on = cards.filter((c) => !hid(c));
-    store.set(Object.fromEntries(off.map((c) => [c.key, l[c.key]])));
+    store.set(Object.fromEntries(Object.entries(l).filter(([k]) => off.some((c) => c.key === k))));
     const card = (c: Card) =>
       h("div", { class: "ask" }, ...c.body, h("button", { class: "lat", on: hide([c]) }, "later"));
     return h(

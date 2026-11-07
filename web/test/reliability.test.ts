@@ -9,6 +9,7 @@ import type { El, Kid } from "../src/lib/dom.ts";
 import { fleetsTab } from "../src/lib/fleets.ts";
 import { queueTab } from "../src/lib/queue.ts";
 import type { Ev, NeedAsk, NeedsTab, QueueTab } from "../src/lib/types.ts";
+import { must } from "./must.ts";
 
 const fx = (n: string) => JSON.parse(fs.readFileSync(new URL(`../fixtures/${n}.json`, import.meta.url), "utf8"));
 const OK = '{"ok":true,"code":"OK","message":"done"}';
@@ -30,7 +31,7 @@ function herdsman(api: Record<string, unknown>, ev: Ev[] = fx("events").list, im
       }
       gets.push(path);
       const name = /^\/api\/v1\/(\w+)/.exec(path)?.[1];
-      if (!name) return path in imgs ? answer(imgs[path]) : answer("no such image", 404);
+      if (!name) return path in imgs ? answer(imgs[path] ?? "") : answer("no such image", 404);
       if (hold.has(name)) await new Promise<void>((r) => waiting.push(r));
       if (name === "events")
         return answer(JSON.stringify({ seq: Math.max(0, ...ev.map((e) => e.seq)), refresh: false, list: ev }));
@@ -57,7 +58,7 @@ function view() {
   const tap = (s: RegExp) => {
     const f = tappable(s);
     assert.ok(f.length, `nothing tappable reads ${s}:\n${all()}`);
-    return (f.at(-1)!.a.on as (v: string) => unknown)("");
+    return (must(f.at(-1)).a.on as (v: string) => unknown)("");
   };
   return {
     draw: (k: Kid[]) => void (kids = k),
@@ -73,9 +74,9 @@ const flush = () => new Promise<void>((r) => setImmediate(r));
 const strip = (v: ReturnType<typeof view>) => v.els().filter((e) => e.a.class === "m strip").length;
 const raw: NeedsTab = fx("needs");
 const askOf = (id: string, f: Partial<NeedAsk["ask"]> = {}, c: Partial<NeedAsk> = {}): NeedAsk => ({
-  ...structuredClone(raw.asks[0]),
+  ...structuredClone(must(raw.asks[0])),
   ...c,
-  ask: { ...structuredClone(raw.asks[0].ask), id, ...f },
+  ask: { ...structuredClone(must(raw.asks[0]).ask), id, ...f },
 });
 const ev = (seq: number, type: string, id: string, ts = raw.now - 60): Ev => ({
   ...structuredClone(fx("events").list[0]),
@@ -207,13 +208,13 @@ test("R15: a lane idle without progress, once herdsman lists it, is a needs-you 
   await tab.load();
   assert.equal(v.cards().length, 1);
   assert.match(v.all(), /^needs you 1/);
-  assert.match(text(v.cards()[0]), /idle 29m.*waiting for input/);
+  assert.match(text(must(v.cards()[0])), /idle 29m.*waiting for input/);
 });
 
 test("R16: a list repeating one id, read 5 times, is one row (asks, undelivered, queue rows, activity)", async () => {
   const a = api(),
-    q = a.queue.fleets[0],
-    r = q.rows[0];
+    q = must(a.queue.fleets[0]),
+    r = must(q.rows[0]);
   a.needs.asks = [askOf("q1"), askOf("q1")];
   q.rows = [r, structuredClone(r)];
   const e = ev(9, "answer-undelivered", "q1");
@@ -240,7 +241,7 @@ test("R17: text naming a file (`/tmp/a.png`, `../x.png`) is never an image or a 
   a.needs.asks = [askOf("q1", { question: bad }, { pngs: ["../x.png", "/tmp/a.png"] })];
   a.needs.blocked = [{ name: "l", who: "l", push: false, tail: bad }];
   const h = herdsman(a, [ev(9, "answer-undelivered", bad)], {
-    [`/design/${a.needs.asks[0].ask.fleet}/${a.needs.asks[0].ask.issue}/0`]: "data:image/png;base64,AAAA",
+    [`/design/${must(a.needs.asks[0]).ask.fleet}/${must(a.needs.asks[0]).ask.issue}/0`]: "data:image/png;base64,AAAA",
   });
   const v = view();
   await asksTab(v.draw, () => raw.now, mem()).load();
