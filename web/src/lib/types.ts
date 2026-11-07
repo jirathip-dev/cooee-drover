@@ -136,7 +136,9 @@ export type Ev = {
 };
 /** herdsman#576: API v1's `issue/<fleet>/<n>`: its verdicts newest first; the newest one's screenshot `shots` (`/shot/…/<i>`). */
 export type IssueView = { fleet: string; issue: number; verdicts: Verdict[] };
-export type Verdict = { role: string; round: number; sha: string; verdict: string; ts: number; findings: string; shots: string[] };
+export type Verdict = { role: string; round: number; sha: string; verdict: string; ts: number; findings: string; shots: string[]; repro?: Repro | null };
+/** herdsman#420: a `--repro` PASS's `Repro:` block: `kind` `run` (both runs fenced) or `verify` (a `>` quoted reason), its lines `text`. */
+export type Repro = { kind: string; text: string };
 /** A POST's answer: `code` OK, a `REFUSED` code or ERROR; `message` the line to show. */
 export type Reply = { ok: boolean; code: string; message: string };
 
@@ -217,7 +219,7 @@ const HOST = {
 };
 const ISSUE = {
   fleet: "string", issue: "number",
-  verdicts: [{ role: "string", round: "number", sha: "string", verdict: "string", ts: "number", findings: "string", shots: ["string"] }],
+  verdicts: [{ role: "string", round: "number", sha: "string", verdict: "string", ts: "number", findings: "string", shots: ["string"], repro: { "?": "", kind: "string", text: "string" } }],
 };
 
 function fits(v: unknown, s: Spec, at: string): string | null {

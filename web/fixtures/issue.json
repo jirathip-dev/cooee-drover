@@ -23,7 +23,10 @@
       "ts": 1793941000,
       "findings": "findings text",
       "shots": [],
-      "repro": null
+      "repro": {
+        "kind": "run",
+        "text": "Base plus commit 1:\n```\ncommand text\n```\n```\noutput text\n```\nHead:\n```\ncommand text\n```\n```\noutput text\n```"
+      }
     }
   ]
 }
