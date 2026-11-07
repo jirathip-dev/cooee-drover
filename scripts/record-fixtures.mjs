@@ -2,7 +2,8 @@
 // http://127.0.0.1:7777`). The repo is public: fleet names become fleet-1…, free text and repos are replaced, and
 // each list (and the backlog's issues) keeps its first 3 rows, so only the shapes are recorded. A config sheet's paths
 // are replaced; `host`'s push key, devices, subscriptions and accounts emptied. herdsman#576: a queue card keeps the
-// marks of its kept rows; `issue` is the first queued row with a verdict (else the first row), its findings replaced.
+// marks of its kept rows; `issue` is the first queued row with a verdict (a repro one first, else the first row), its
+// findings replaced and a `Repro:` block's text kept to its shape (#15).
 import fs from "node:fs";
 
 const base = process.argv[2] ?? "http://127.0.0.1:7777";
@@ -17,7 +18,9 @@ const state = await read("state");
 const fleets = new Map(state.fleets.map((f, i) => [f.name, `fleet-${i + 1}`]));
 const longest = [...fleets].sort(([a], [b]) => b.length - a.length);
 const cards = (await read("queue")).fleets, rows = cards.flatMap((c) => c.rows.map((r) => [c.name, r]));
-const [fleet, row] = rows.find(([, r]) => r.pr.verdict != null) ?? rows[0];
+const repro = (n, r) => cards.find((c) => c.name === n).marks[r.issue]?.repro;
+const [fleet, row] = rows.find(([n, r]) => r.pr.verdict != null && repro(n, r)) ?? rows.find(([, r]) => r.pr.verdict != null) ?? rows[0];
+const fence = (t) => `\`\`\`\n${t}\n\`\`\`\n`, RUN = `Base plus commit 1:\n${fence("command text")}${fence("output text")}Head:\n${fence("command text")}${fence("output text")}`;
 
 for (const [path, file] of [["state", "state"], ["queue", "queue"], ["needs", "needs"], ["host", "host"], [`events?since=${state.seq - 40}`, "events"],
   [`issue/${encodeURIComponent(fleet)}/${row.issue}`, "issue"]]) {
@@ -28,6 +31,7 @@ for (const [path, file] of [["state", "state"], ["queue", "queue"], ["needs", "n
     // An event's `data` is free-form: its strings become `<key> text`, its lists and objects null.
     if (key === "data") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, typeof x === "string" ? `${k} text` : typeof x === "object" ? null : x]));
     if (key in DROP) return DROP[key];
+    if (key === "repro" && v) return { kind: v.kind, text: v.kind === "run" ? RUN.trimEnd() : "> reason text" };
     if (key === "issues") return Object.fromEntries(Object.entries(v).slice(0, 3).map(([n, x]) => [n, walk(x)]));
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));
     if (typeof v !== "string") return v;

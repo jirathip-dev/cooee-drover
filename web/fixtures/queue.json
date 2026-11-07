@@ -390,7 +390,7 @@
         "22": {
           "design": true,
           "verify": null,
-          "repro": false,
+          "repro": true,
           "serial": [],
           "needs": [],
           "note": null

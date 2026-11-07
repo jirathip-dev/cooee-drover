@@ -356,3 +356,66 @@ test("14: the issue sheet: verdicts newest first, a verify PASS's 1440 and 390 s
   assert.ok(!h.other.some((p) => p.startsWith("/design/fleet-1/32")), "no design stage, no design read");
   assert.equal(v.els().filter((e) => e.a.class === "cd" && /VERDICTS/.test(text(e))).length, 1, "an issue with no verdicts shows none");
 });
+
+test("15: a repro issue's row shows the mark; a NO_REPRO merge refusal shows on its row in plain words", async () => {
+  const q = copy();
+  q.fleets[0].drive.acts = [{ who: "#22", words: "rev's `Repro: verify` PASS has no verify PASS at 0123456", code: "NO_REPRO" }];
+  herdsman(q);
+  const v = await open();
+  assert.equal(q.fleets[0].marks["22"].repro, true, "the fixture: fleet-1 #22 queued --repro");
+  assert.match(v.all(), /#22 .*title textreprorev's PASS has no repro proof/);
+  assert.doesNotMatch(v.all(), /#(30|32) [^#]*repro/, "unmarked rows show no mark");
+  assert.equal(v.els().filter((e) => text(e) === "rev's PASS has no repro proof").map((e) => e.a.class).join(), "tag r");
+  q.fleets[0].drive.acts[0].code = "CI_NOT_GREEN";
+  await v.t.load();
+  assert.doesNotMatch(v.all(), /no repro proof/, "another refusal is not NO_REPRO");
+});
+
+test("15: [repro off] posts qset and the reloaded mark shows; unpaired, the tap answers UNPAIRED", async () => {
+  const q = copy();
+  const h = herdsman(q, ({ f }) => {
+    if (f.value === "on") return '{"ok":false,"code":"UNPAIRED","message":"pair this device first"}';
+    q.fleets[0].marks[f.issue].repro = f.value === "on";
+    return `{"ok":true,"code":"OK","message":"#${f.issue}: ${f.key} ${f.value}"}`;
+  });
+  const v = await open();
+  await v.tap(at(22));
+  assert.match(v.all(), /REPROrepro: on · rev's PASS needs the failing test's proof/);
+  assert.equal(v.els().find((e) => text(e) === "repro on" && e.t === "button")?.a["aria-pressed"], "true");
+  await v.tap("repro off");
+  assert.deepEqual(h.posts[0], { path: "/api/v1/qset", f: { op: "qset", fleet: "fleet-1", mtime: q.mtime, issue: "22", key: "repro", value: "off" } });
+  assert.match(v.all(), /#22: repro off/);
+  assert.match(v.all(), /REPROrepro: off/, "the reloaded queue's mark");
+  assert.doesNotMatch(v.all(), /#22 [^#]*title textrepro/, "the row's mark is gone");
+  await v.tap("repro on");
+  assert.match(v.all(), /UNPAIRED: pair this device first/);
+  assert.match(v.all(), /REPROrepro: off/, "unchanged");
+});
+
+/** The issue sheet of fleet-1 #22, its verdicts `vs`. */
+async function sheet(vs: IssueView["verdicts"]) {
+  herdsman(raw, undefined, { "/api/v1/issue/fleet-1/22": JSON.stringify({ ...rawIssue, verdicts: vs }) });
+  const v = await open();
+  await v.tap(at(22));
+  return v;
+}
+
+test("15: a `Repro: run` PASS renders both runs: the command failing on the base, then passing at the head", async () => {
+  assert.equal(rawIssue.verdicts[1].repro?.kind, "run", "the fixture's rev PASS carries a Repro: run block");
+  const body = "Base plus commit 1:\n```\nnpm test -- repro\n```\n```sh\nnot ok 1 repro\n```\nHead:\n```\nnpm test -- repro\n```\n```\nok 1 repro\n```";
+  const v = await sheet([{ ...rawIssue.verdicts[1], repro: { kind: "run", text: body } }]);
+  assert.match(v.all(), /rev r1 PASS 0123456findings textREPRO: runon the base, fails:npm test -- repronot ok 1 reproat the head 0123456, passes:npm test -- reprook 1 repro/);
+  assert.deepEqual(v.els().filter((e) => e.t === "code").map(text).slice(-4), ["npm test -- repro", "not ok 1 repro", "npm test -- repro", "ok 1 repro"]);
+});
+
+test("15: a `Repro: verify` PASS quotes its reason and waits on verify until a verify PASS at its head", async () => {
+  const rev = { ...rawIssue.verdicts[1], repro: { kind: "verify", text: "> a pure visual bug: the meter's colour\n> has no unit test path" } };
+  let v = await sheet([rev]);
+  assert.match(v.all(), /REPRO: verifya pure visual bug: the meter's colour has no unit test pathwaits on verify: no verify PASS at 0123456 yet/);
+  assert.equal(text(v.els().find((e) => e.t === "blockquote")!), "a pure visual bug: the meter's colour has no unit test path");
+  v = await sheet([{ ...rawIssue.verdicts[0], sha: "f".repeat(40) }, rev]);
+  assert.match(v.all(), /waits on verify: no verify PASS at 0123456 yet/, "a verify PASS at another sha does not count");
+  v = await sheet([rawIssue.verdicts[0], rev]);
+  assert.match(v.all(), /REPRO: verify.*verify PASS at 0123456/);
+  assert.doesNotMatch(v.all(), /waits on verify/);
+});

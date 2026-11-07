@@ -5,7 +5,7 @@
 import { image, issue, post, queue } from "./api.ts";
 import { h, late, strip, type El, type Kid } from "./dom.ts";
 import { laneHref, threadHref } from "./links.ts";
-import type { Ask, IssueView, QueueCard, QueueRow, QueueTab } from "./types.ts";
+import type { Ask, IssueView, QueueCard, QueueRow, QueueTab, Verdict } from "./types.ts";
 
 /** The tab's own state: the repo picked, what is open, a fleet's pending op, the last answer, each backlog's picks. */
 export type Bl = { q: string; on: string[]; label: string; ticks: number[] };
@@ -188,13 +188,28 @@ export function queueTab(draw: (kids: Kid[]) => void) {
       ls.length > 5 && h("button", { class: "lk", on: toggle(`old:${key}`) }, `HISTORY +${ls.length - 5} older`),
       ...(ui.open.has(`old:${key}`) ? ls.slice(5) : []));
   };
-  // herdsman#576: the verify mark (on, off, by UI paths); a paired device sets it.
+  // herdsman#576: the verify mark (on, off, by UI paths) and the repro mark (on, off); a paired device sets each.
   const verify = (c: QueueCard, r: QueueRow): (Kid | false)[] => {
     const m = c.marks[r.issue];
     if (!m) return [];
-    const set = (v: string) => op(c.name, "qset", { issue: String(r.issue), key: "verify", value: v });
-    return [head("VERIFY"), h("p", {}, `verify: ${m.verify ?? "by UI paths"}`, m.note != null && span("m", ` · ${m.note}`)),
-      d!.rw && h("p", { class: "btns" }, ...["on", "off"].map((v) => h("button", { "aria-pressed": String(m.verify === v), on: set(v) }, `verify ${v}`)))];
+    const btns = (key: string, now: string | null | undefined) => d!.rw && h("p", { class: "btns" }, ...["on", "off"].map((v) =>
+      h("button", { "aria-pressed": String(now === v), on: op(c.name, "qset", { issue: String(r.issue), key, value: v }) }, `${key} ${v}`)));
+    return [head("VERIFY"), h("p", {}, `verify: ${m.verify ?? "by UI paths"}`, m.note != null && span("m", ` · ${m.note}`)), btns("verify", m.verify),
+      head("REPRO"), h("p", {}, `repro: ${m.repro ? "on · rev's PASS needs the failing test's proof" : "off"}`), btns("repro", m.repro ? "on" : "off")];
+  };
+  // herdsman#420: a repro PASS's proof: `run`, the command and its output failing on the base, then passing at the
+  // head; `verify`, the quoted reason, and whether a verify PASS at the same head exists yet.
+  const repro = (x: Verdict, all: Verdict[]): Kid[] => {
+    const p = x.repro!, sha = x.sha.slice(0, 7);
+    if (p.kind !== "verify") {
+      const f = p.text.split("```").filter((_, i) => i % 2).map((b) => b.slice(b.indexOf("\n") + 1).trimEnd());
+      const run = (t: string, cls: string, i: number) => [h("p", { class: cls }, t), h("code", {}, f[i] ?? ""), h("code", {}, f[i + 1] ?? "")];
+      return [h("p", { class: "ch" }, `REPRO: ${p.kind}`), ...run("on the base, fails:", "r", 0), ...run(`at the head ${sha}, passes:`, "g", 2)];
+    }
+    const why = p.text.split("\n").filter((l) => l.trimStart().startsWith(">")).map((l) => l.trimStart().slice(1).trim()).join(" ");
+    const ok = all.some((y) => y.role === "verify" && y.verdict === "PASS" && y.sha === x.sha);
+    return [h("p", { class: "ch" }, "REPRO: verify"), h("blockquote", {}, why),
+      ok ? h("p", { class: "g" }, `verify PASS at ${sha}`) : h("p", { class: "a" }, `waits on verify: no verify PASS at ${sha} yet`)];
   };
   // herdsman#576: the issue's verdicts newest first: stage, round, PASS/FAIL, sha, findings; the newest one's
   // screenshots inline, the approved design's PNGs beside them.
@@ -205,6 +220,7 @@ export function queueTab(draw: (kids: Kid[]) => void) {
     return v.length ? [head(`VERDICTS (${v.length})`), ...v.map((x, j) => h("div", { class: "vd" },
       h("p", {}, `${x.role} r${x.round} `, span(x.verdict === "PASS" ? "g" : "r", x.verdict), span("m", ` ${x.sha.slice(0, 7)}`)),
       x.findings && h("code", {}, x.findings),
+      ...(x.repro ? repro(x, v) : []),
       j === 0 && x.shots.length > 0 && h("div", { class: "shots" }, ...x.shots.map((n, i) => fig(pic("shot", c, r, i), n)),
         ...design.map((p, i) => fig(p, `design ${i + 1}`)))))] : [];
   };
@@ -212,7 +228,7 @@ export function queueTab(draw: (kids: Kid[]) => void) {
   const row = (c: QueueCard, n: Node, when: string): El => {
     const { r } = n, key = `${c.name}#${r.issue}`, s = r.state;
     const dot = r.tone === "r" || group(s) === "need" ? "!" : s === "ready" ? "✓" : /^(impl|review|fix|verify)/.test(s) ? "●" : "○";
-    const m = c.marks[r.issue];
+    const m = c.marks[r.issue], me = `#${r.issue}`;
     const gutter = n.depth ? `${"  ".repeat(Math.min(n.depth, 2) - 1)}${n.last || n.depth > 2 ? "└─" : "├─"}` : "";
     const line = h("div", { class: "rl", on: open(c, r) },
       span("gt", gutter, span(r.tone, dot)), ` #${r.issue} `, h("span", { class: r.tone, title: hint(s) }, s), " ",
@@ -222,7 +238,9 @@ export function queueTab(draw: (kids: Kid[]) => void) {
       n.depth > 2 && span("tag m", `after #${r.blocked_by}`),
       r.check && span("tag m", "needs-check"),
       m?.verify != null && span("tag m", `verify ${m.verify}`),
-      m?.note?.startsWith("verify skipped") && span("tag a", m.note));
+      m?.note?.startsWith("verify skipped") && span("tag a", m.note),
+      m?.repro && span("tag m", "repro"),
+      c.drive.acts.some((x) => x.who === me && x.code === "NO_REPRO") && span("tag r", "rev's PASS has no repro proof"));
     return h("div", { class: `q d${Math.min(n.depth, 2)}` }, line, ui.open.has(`row:${key}`) && card(c, r));
   };
   // #367 #391: the queued group: each root and its blocked steps one item, a chain one row (`chain · N`, its place,
@@ -335,6 +353,7 @@ h3{font-size:.9em;color:var(--mute);margin:10px 0 4px}
 .pt{color:var(--mute)}.pt.on{color:var(--fg);font-weight:bold}.pt.dn{opacity:.6}.ql{display:block}
 .sheet{background:var(--card);border:1px solid var(--edge);border-radius:8px;padding:8px}.bi{display:block}
 code{display:block;white-space:pre-wrap;font-size:.85em}
+blockquote{margin:4px 0;padding-left:8px;border-left:2px solid var(--edge)}
 .shots{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}.shots figure{margin:0}.shots img{max-width:100%;max-height:320px;border:1px solid var(--edge)}
 .g{color:var(--g)}.a{color:var(--a)}.r{color:var(--r)}.m{color:var(--mute)}
 `;
