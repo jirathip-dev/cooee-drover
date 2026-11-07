@@ -1,5 +1,5 @@
 // herdsman API v1's shapes the tabs read (herdsman assets/types/api.d.ts), and `parseState`, `parseQueue`, `parseNeeds`,
-// `parseEvents`, the contract checks the tabs run on their `/api/v1` reads: a field herdsman drops or retypes fails
+// `parseEvents`, `parseIssue`, the contract checks the tabs run on their `/api/v1` reads: a field herdsman drops or retypes fails
 // here, loudly, not as a blank tab.
 export type Fleet = { name: string; repo: string; color: string; paused: boolean };
 export type Queued = { fleet: string; issue: number; title?: string | null; state: string; blocked_by?: number | null };
@@ -56,7 +56,10 @@ export type QueueCard = {
   done_n: number;
   backlog?: { issues: Record<string, BacklogIssue>; ago: string } | null;
   config: { repo: string };
+  marks: Record<string, Marks>;
 };
+/** herdsman#576: a queued row's marks by issue: `verify` `on`, `off` or none (by `ui_paths`); `note` `verify(n)` or `verify skipped: …`. */
+export type Marks = { design: boolean; verify?: string | null; repro: boolean; serial: string[]; needs: string[]; note?: string | null };
 export type QueueRow = {
   issue: number;
   state: string;
@@ -131,6 +134,9 @@ export type Ev = {
   seq: number; ts: number; fleet: string; issue?: number | null; type: string; data: Record<string, unknown>; plain: string;
   glyph: string; tone: string; text: string; imp: boolean;
 };
+/** herdsman#576: API v1's `issue/<fleet>/<n>`: its verdicts newest first; the newest one's screenshot `shots` (`/shot/…/<i>`). */
+export type IssueView = { fleet: string; issue: number; verdicts: Verdict[] };
+export type Verdict = { role: string; round: number; sha: string; verdict: string; ts: number; findings: string; shots: string[] };
 /** A POST's answer: `code` OK, a `REFUSED` code or ERROR; `message` the line to show. */
 export type Reply = { ok: boolean; code: string; message: string };
 
@@ -190,6 +196,7 @@ const QUEUE = {
     notes: ["string"], done: [{ issue: "number", note: "string", age: "string", pr: "string?" }], done_n: "number",
     backlog: { "?": "", ago: "string", issues: { "*": { title: "string", created: "string", updated: "string", labels: ["string"], ac: "boolean", pr: "boolean" } } },
     config: { repo: "string" },
+    marks: { "*": { design: "boolean", verify: "string?", repro: "boolean", serial: ["string"], needs: ["string"], note: "string?" } },
     rows: [{
       issue: "number", state: "string", tone: "string", t: "number", queued: "boolean", check: "boolean", groups: ["string"],
       blocked_by: "number?", title: "string?", stage: [{ name: "string", k: "string", g: "string", at: "number", ok: "boolean" }],
@@ -207,6 +214,10 @@ const HOST = {
   rw: "boolean", live: "boolean", mtime: "string", orphans: "number", leftovers: { "?": "", n: "number", mb: "string" },
   hosts: [{ name: "string", main: "boolean", tone: "string", words: "string", to: "string?", lanes: "number" }],
   disk: { "?": "", bar: BAR, gb: "string", budget: "number", ago: "string?" }, notify: [{ kind: "string", on: "string" }],
+};
+const ISSUE = {
+  fleet: "string", issue: "number",
+  verdicts: [{ role: "string", round: "number", sha: "string", verdict: "string", ts: "number", findings: "string", shots: ["string"] }],
 };
 
 function fits(v: unknown, s: Spec, at: string): string | null {
@@ -231,4 +242,5 @@ export const parseQueue = (json: unknown): QueueTab => parse("queue", QUEUE, jso
 export const parseFleets = (json: unknown): FleetsTab => parse("queue", FLEETS, json);
 export const parseHost = (json: unknown): HostTab => parse("host", HOST, json);
 export const parseNeeds = (json: unknown): NeedsTab => parse("needs", NEEDS, json);
+export const parseIssue = (json: unknown): IssueView => parse("issue", ISSUE, json);
 export const parseEvents = (json: unknown): Events => parse("events", EVENTS, json);

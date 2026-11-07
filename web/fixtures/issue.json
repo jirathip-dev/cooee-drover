@@ -1,0 +1,29 @@
+{
+  "fleet": "fleet-1",
+  "issue": 22,
+  "verdicts": [
+    {
+      "role": "verify",
+      "round": 1,
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "verdict": "PASS",
+      "ts": 1793942000,
+      "findings": "findings text",
+      "shots": [
+        "queue-1440.png",
+        "queue-390.png"
+      ],
+      "repro": null
+    },
+    {
+      "role": "rev",
+      "round": 1,
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "verdict": "PASS",
+      "ts": 1793941000,
+      "findings": "findings text",
+      "shots": [],
+      "repro": null
+    }
+  ]
+}
