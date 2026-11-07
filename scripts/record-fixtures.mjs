@@ -1,22 +1,26 @@
 // Records herdsman /api/v1 responses into web/fixtures/ for the contract test (`node scripts/record-fixtures.mjs
 // http://127.0.0.1:7777`). The repo is public: fleet names become fleet-1…, free text and repos are replaced, and
 // each list (and the backlog's issues) keeps its first 3 rows, so only the shapes are recorded. A config sheet's paths
-// are replaced; `host`'s push key, devices, subscriptions and accounts emptied.
+// are replaced; `host`'s push key, devices, subscriptions and accounts emptied. herdsman#576: a queue card keeps the
+// marks of its kept rows; `issue` is the first queued row with a verdict (else the first row), its findings replaced.
 import fs from "node:fs";
 
 const base = process.argv[2] ?? "http://127.0.0.1:7777";
 const TEXT = new Set(["title", "question", "detail", "fix", "shown", "message", "mtime", "line", "meta", "words", "code",
   "notes", "note", "paused", "decided", "kind", "paths", "labels", "why", "fail", "reason", "plain", "result", "run",
   "activity", "tail", "command", "thread", "from", "path", "local", "key", "label", "hash", "msg", "deny", "env",
-  "notify", "global", "required"]);
+  "notify", "global", "required", "findings"]);
 const DROP = { subs: [], devices: [], accounts: [] };
 const read = async (path) => (await fetch(`${base}/api/v1/${path}`)).json();
 // state's fleets name every fleet; needs and events (the newest 40) are scrubbed by the same map.
 const state = await read("state");
 const fleets = new Map(state.fleets.map((f, i) => [f.name, `fleet-${i + 1}`]));
 const longest = [...fleets].sort(([a], [b]) => b.length - a.length);
+const cards = (await read("queue")).fleets, rows = cards.flatMap((c) => c.rows.map((r) => [c.name, r]));
+const [fleet, row] = rows.find(([, r]) => r.pr.verdict != null) ?? rows[0];
 
-for (const [path, file] of [["state", "state"], ["queue", "queue"], ["needs", "needs"], ["host", "host"], [`events?since=${state.seq - 40}`, "events"]]) {
+for (const [path, file] of [["state", "state"], ["queue", "queue"], ["needs", "needs"], ["host", "host"], [`events?since=${state.seq - 40}`, "events"],
+  [`issue/${encodeURIComponent(fleet)}/${row.issue}`, "issue"]]) {
   const raw = path === "state" ? state : await read(path);
   const scrub = (s) => longest.reduce((t, [real, fake]) => t.replaceAll(real, fake), s);
   const walk = (v, key) => {
@@ -29,10 +33,12 @@ for (const [path, file] of [["state", "state"], ["queue", "queue"], ["needs", "n
     if (typeof v !== "string") return v;
     if (key === "repo") return "example/repo";
     if (key === "kind" && /^(build|check|gate)$/.test(v)) return v; // a pipeline stage's kind
+    if (key === "note" && /^verify/.test(v)) return v; // a row's verify note
     if (TEXT.has(key) || key === "options") return `${key} text`;
     return scrub(v);
   };
-  const out = new URL(`../web/fixtures/${file}.json`, import.meta.url);
-  fs.writeFileSync(out, JSON.stringify(walk(raw), null, 2) + "\n");
+  const out = new URL(`../web/fixtures/${file}.json`, import.meta.url), json = walk(raw);
+  if (file === "queue") for (const c of json.fleets) c.marks = Object.fromEntries(Object.entries(c.marks).filter(([n]) => c.rows.some((r) => r.issue === +n)));
+  fs.writeFileSync(out, JSON.stringify(json, null, 2) + "\n");
   console.log(`recorded ${file}`);
 }

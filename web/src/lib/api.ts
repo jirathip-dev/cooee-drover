@@ -1,7 +1,7 @@
 // The tabs' herdsman client: every call goes through `cooee.fetch` to this backend, which forwards `/api/v1/*`.
 import {
-  parseEvents, parseFleets, parseHost, parseNeeds, parseQueue, parseState,
-  type Events, type FleetsTab, type HostTab, type NeedsTab, type QueueTab, type Reply, type State,
+  parseEvents, parseFleets, parseHost, parseIssue, parseNeeds, parseQueue, parseState,
+  type Events, type FleetsTab, type HostTab, type IssueView, type NeedsTab, type QueueTab, type Reply, type State,
 } from "./types.ts";
 
 export async function get(path: string): Promise<unknown> {
@@ -15,6 +15,8 @@ export const queue = async (): Promise<QueueTab> => parseQueue(await get("queue"
 export const fleets = async (): Promise<FleetsTab> => parseFleets(await get("queue"));
 export const host = async (): Promise<HostTab> => parseHost(await get("host"));
 export const needs = async (): Promise<NeedsTab> => parseNeeds(await get("needs"));
+/** herdsman#576: an issue's verdicts, newest first. */
+export const issue = async (fleet: string, n: number): Promise<IssueView> => parseIssue(await get(`issue/${encodeURIComponent(fleet)}/${n}`));
 /** #259 #266: the events after `since` (up to `until`). */
 export const events = async (since: number, until?: number): Promise<Events> =>
   parseEvents(await get(`events?since=${since}${until == null ? "" : `&until=${until}`}`));

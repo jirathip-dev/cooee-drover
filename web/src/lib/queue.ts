@@ -2,10 +2,10 @@
 // tests tap it under node. One repo at a time (chips, swipe, [all]); a fleet's card in its colour (paused: one line),
 // its drive line, rows grouped needs you / in progress / queued, blocked chains as a tree (folded to one row in the
 // queue), the open card (stage chips, lane, links, ask, ▲/▼, lanes), done today, the backlog and the [?] legend.
-import { post, queue } from "./api.ts";
+import { image, issue, post, queue } from "./api.ts";
 import { h, type El, type Kid } from "./dom.ts";
 import { laneHref, threadHref } from "./links.ts";
-import type { Ask, QueueCard, QueueRow, QueueTab } from "./types.ts";
+import type { Ask, IssueView, QueueCard, QueueRow, QueueTab } from "./types.ts";
 
 /** The tab's own state: the repo picked, what is open, a fleet's pending op, the last answer, each backlog's picks. */
 export type Bl = { q: string; on: string[]; label: string; ticks: number[] };
@@ -14,7 +14,7 @@ export type UI = { repo: string; open: Set<string>; busy: Record<string, string>
 /** #115: what each state word means: the legend sheet and every state word's title. */
 export const HINT: Record<string, string> = {
   queued: "waiting its turn", impl: "being built", "review(n)": "being checked, round n",
-  "fix(n)": "fixing review findings, round n", ready: "passed, waiting to merge", merged: "merged into staging",
+  "fix(n)": "fixing review findings, round n", "verify(n)": "being tried in the real app, round n", ready: "passed, waiting to merge", merged: "merged into staging",
   parked: "lane closed, its work saved on the PR", dead: "lane gone with unsaved work", "needs you": "waiting for your answer",
   working: "its lane is running", idle: "its lane waits for a next step", done: "its lane finished its turn",
 };
@@ -28,7 +28,7 @@ export const hint = (s: string): string => (HINT[word(s)] ? `${word(s)} = ${HINT
 /** #367: a row's group, and its time in one unit style. */
 const GROUPS = { need: "needs you", prog: "in progress", queue: "queued" };
 export const group = (s: string): keyof typeof GROUPS =>
-  /^(needs-human|⏸)/.test(s) ? "need" : /^(impl|review|fix|ready|update|dead|parked)/.test(s) ? "prog" : "queue";
+  /^(needs-human|⏸)/.test(s) ? "need" : /^(impl|review|fix|verify|ready|update|dead|parked)/.test(s) ? "prog" : "queue";
 export const dur = (t: number): string =>
   t < 60 ? `${t}s` : t < 3600 ? `${Math.floor(t / 60)}m` : t < 86400 ? `${Math.floor(t / 3600)}h ${Math.floor((t % 3600) / 60)}m`
     : `${Math.floor(t / 86400)}d ${Math.floor((t % 86400) / 3600)}h`;
@@ -73,6 +73,8 @@ export function backlog(c: QueueCard, now: number, s: Bl): { all: BRow[]; shown:
   return { all, shown: all.filter(pass) };
 }
 
+/** herdsman#417 #412: a verdict's `i`th screenshot (`shot`) or the design's PNG (`design`), as the backend serves it. */
+const pic = (k: string, c: QueueCard, r: QueueRow, i: number) => `/${k}/${encodeURIComponent(c.name)}/${r.issue}/${i}`;
 const gh = (c: QueueCard, p: string) => `https://github.com/${c.config.repo}/${p}`;
 const a = (href: string, text: string, cls = "") => h("a", { href, target: "_top", class: cls }, text);
 const span = (cls: string, ...k: (Kid | false | null)[]) => h("span", { class: cls }, ...k);
@@ -83,6 +85,8 @@ const span = (cls: string, ...k: (Kid | false | null)[]) => h("span", { class: c
  */
 export function queueTab(draw: (kids: Kid[]) => void) {
   let d: QueueTab | null = null, err = "";
+  // herdsman#576: an open issue's verdicts, and each image as a `data:` URL by path ("": being read).
+  const iv: Record<string, IssueView> = {}, imgs: Record<string, string> = {};
   const ui: UI = { repo: "", open: new Set(), busy: {}, msg: ["", ""], bl: {}, text: {} };
   const redraw = () => draw(d ? view(d) : [h("p", { class: "r" }, err || "loading…")]);
   const load = async () => {
@@ -94,6 +98,21 @@ export function queueTab(draw: (kids: Kid[]) => void) {
     redraw();
   };
   const toggle = (k: string) => () => (ui.open.has(k) ? ui.open.delete(k) : ui.open.add(k), redraw());
+  const img = async (p: string) => (p in imgs ? !!imgs[p] : ((imgs[p] = ""), (imgs[p] = (await image(p)) ?? ""), redraw(), !!imgs[p]));
+  // Opening a row reads its verdicts, then the newest one's screenshots and, after a design stage, the design's PNGs.
+  const open = (c: QueueCard, r: QueueRow) => async () => {
+    const key = `${c.name}#${r.issue}`;
+    toggle(`row:${key}`)();
+    if (!ui.open.has(`row:${key}`)) return;
+    try {
+      iv[key] = await issue(c.name, r.issue);
+    } catch (e) {
+      ui.msg = ["r", String(e)];
+    }
+    redraw();
+    await Promise.all((iv[key]?.verdicts[0]?.shots ?? []).map((_, i) => img(pic("shot", c, r, i))));
+    for (let i = 0; c.marks[r.issue]?.design && i < 4 && (await img(pic("design", c, r, i))); i++);
+  };
   const op = (fleet: string, name: string, f: Record<string, string> = {}, busy = "") => async () => {
     if (busy) (ui.busy[fleet] = busy), redraw();
     const r = await post(name, { op: name, fleet, mtime: d?.mtime ?? "", ...f });
@@ -158,25 +177,50 @@ export function queueTab(draw: (kids: Kid[]) => void) {
       r.decided != null && h("p", {}, `decided by default: ${r.decided}`),
       r.decided != null && r.ask && d!.rw && answer(r.ask, "change"),
       r.mv && d!.rw && h("p", { class: "btns" }, mv("up", "before", r.up), mv("down", "after", r.down)),
+      ...verify(c, r),
       head("LINKS"),
       links(c, r),
+      ...verdicts(c, r),
       ls.length > 0 && head(`LANES (${ls.length})`),
       ...ls.slice(0, 5),
       ls.length > 5 && h("button", { class: "lk", on: toggle(`old:${key}`) }, `HISTORY +${ls.length - 5} older`),
       ...(ui.open.has(`old:${key}`) ? ls.slice(5) : []));
   };
+  // herdsman#576: the verify mark (on, off, by UI paths); a paired device sets it.
+  const verify = (c: QueueCard, r: QueueRow): (Kid | false)[] => {
+    const m = c.marks[r.issue];
+    if (!m) return [];
+    const set = (v: string) => op(c.name, "qset", { issue: String(r.issue), key: "verify", value: v });
+    return [head("VERIFY"), h("p", {}, `verify: ${m.verify ?? "by UI paths"}`, m.note != null && span("m", ` · ${m.note}`)),
+      d!.rw && h("p", { class: "btns" }, ...["on", "off"].map((v) => h("button", { "aria-pressed": String(m.verify === v), on: set(v) }, `verify ${v}`)))];
+  };
+  // herdsman#576: the issue's verdicts newest first: stage, round, PASS/FAIL, sha, findings; the newest one's
+  // screenshots inline, the approved design's PNGs beside them.
+  const verdicts = (c: QueueCard, r: QueueRow): (Kid | false)[] => {
+    const v = iv[`${c.name}#${r.issue}`]?.verdicts ?? [];
+    const fig = (p: string, name: string) => h("figure", {}, imgs[p] && h("img", { src: imgs[p], alt: name }), h("figcaption", { class: "m" }, name));
+    const design = [0, 1, 2, 3].map((i) => pic("design", c, r, i)).filter((p) => imgs[p]);
+    return v.length ? [head(`VERDICTS (${v.length})`), ...v.map((x, j) => h("div", { class: "vd" },
+      h("p", {}, `${x.role} r${x.round} `, span(x.verdict === "PASS" ? "g" : "r", x.verdict), span("m", ` ${x.sha.slice(0, 7)}`)),
+      x.findings && h("code", {}, x.findings),
+      j === 0 && x.shots.length > 0 && h("div", { class: "shots" }, ...x.shots.map((n, i) => fig(pic("shot", c, r, i), n)),
+        ...design.map((p, i) => fig(p, `design ${i + 1}`)))))] : [];
+  };
   // A row's line: tree gutter and dot, #N, state (its hint the title), time or place, title, 🔒 and `! #b` tags.
   const row = (c: QueueCard, n: Node, when: string): El => {
     const { r } = n, key = `${c.name}#${r.issue}`, s = r.state;
-    const dot = r.tone === "r" || group(s) === "need" ? "!" : s === "ready" ? "✓" : /^(impl|review|fix)/.test(s) ? "●" : "○";
+    const dot = r.tone === "r" || group(s) === "need" ? "!" : s === "ready" ? "✓" : /^(impl|review|fix|verify)/.test(s) ? "●" : "○";
+    const m = c.marks[r.issue];
     const gutter = n.depth ? `${"  ".repeat(Math.min(n.depth, 2) - 1)}${n.last || n.depth > 2 ? "└─" : "├─"}` : "";
-    const line = h("div", { class: "rl", on: toggle(`row:${key}`) },
+    const line = h("div", { class: "rl", on: open(c, r) },
       span("gt", gutter, span(r.tone, dot)), ` #${r.issue} `, h("span", { class: r.tone, title: hint(s) }, s), " ",
       span("m", when), " ", span("tl", r.title ?? ""),
       ...r.groups.map((g) => h("span", { class: "tag m", title: "serial: one lane at a time" }, `🔒${g}`)),
       r.blocked_by != null && !n.up && span("tag r", `! #${r.blocked_by}`),
       n.depth > 2 && span("tag m", `after #${r.blocked_by}`),
-      r.check && span("tag m", "needs-check"));
+      r.check && span("tag m", "needs-check"),
+      m?.verify != null && span("tag m", `verify ${m.verify}`),
+      m?.note?.startsWith("verify skipped") && span("tag a", m.note));
     return h("div", { class: `q d${Math.min(n.depth, 2)}` }, line, ui.open.has(`row:${key}`) && card(c, r));
   };
   // #367 #391: the queued group: each root and its blocked steps one item, a chain one row (`chain · N`, its place,
@@ -289,5 +333,6 @@ h3{font-size:.9em;color:var(--mute);margin:10px 0 4px}
 .pt{color:var(--mute)}.pt.on{color:var(--fg);font-weight:bold}.pt.dn{opacity:.6}.ql{display:block}
 .sheet{background:var(--card);border:1px solid var(--edge);border-radius:8px;padding:8px}.bi{display:block}
 code{display:block;white-space:pre-wrap;font-size:.85em}
+.shots{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}.shots figure{margin:0}.shots img{max-width:100%;max-height:320px;border:1px solid var(--edge)}
 .g{color:var(--g)}.a{color:var(--a)}.r{color:var(--r)}.m{color:var(--mute)}
 `;
