@@ -3,9 +3,9 @@
 // its drive line, rows grouped needs you / in progress / queued, blocked chains as a tree (folded to one row in the
 // queue), the open card (stage chips, lane, links, ask, ▲/▼, lanes), done today, the backlog and the [?] legend.
 import { image, issue, post, queue } from "./api.ts";
-import { h, late, strip, type El, type Kid } from "./dom.ts";
+import { type El, h, type Kid, late, strip } from "./dom.ts";
 import { laneHref, threadHref } from "./links.ts";
-import type { Ask, IssueView, QueueCard, QueueRow, QueueTab, Verdict } from "./types.ts";
+import type { Ask, IssueView, QueueCard, QueueRow, QueueTab, Repro, Verdict } from "./types.ts";
 
 /** The tab's own state: the repo picked, what is open, a fleet's pending op, the last answer, each backlog's picks. */
 export type Bl = { q: string; on: string[]; label: string; ticks: number[] };
@@ -66,17 +66,23 @@ export function tree(rows: QueueRow[]): Node[] {
   const par = (r: QueueRow) => {
     const seen = new Set([r]);
     let x = by.get(r.blocked_by ?? -1);
-    while (x && !seen.has(x)) seen.add(x), (x = by.get(x.blocked_by ?? -1));
+    while (x && !seen.has(x)) {
+      seen.add(x);
+      x = by.get(x.blocked_by ?? -1);
+    }
     return x ? undefined : by.get(r.blocked_by ?? -1);
   };
   const kids = new Map(rows.map((r) => [r, [] as QueueRow[]])),
     roots: QueueRow[] = [];
-  for (const r of rows) (par(r) ? kids.get(par(r)!)! : roots).push(r);
+  for (const r of rows) {
+    const p = par(r);
+    ((p && kids.get(p)) || roots).push(r);
+  }
   const out: Node[] = [];
   const walk = (list: QueueRow[], depth: number) =>
     list.forEach((r, i) => {
       out.push({ r, depth, last: i === list.length - 1, up: !!par(r) });
-      walk(kids.get(r)!, depth + 1);
+      walk(kids.get(r) ?? [], depth + 1);
     });
   walk(roots, 0);
   return out;
@@ -140,18 +146,31 @@ export function queueTab(draw: (kids: Kid[]) => void) {
   const ui: UI = { repo: "", open: new Set(), busy: {}, msg: ["", ""], bl: {}, text: {} };
   const redraw = () => draw([...strip(slow), ...(d ? view(d) : err ? [h("p", { class: "r" }, err)] : [])]);
   const load = async () => {
-    const done = late((s) => ((slow = s), s && redraw()));
+    const done = late((s) => {
+      slow = s;
+      if (s) redraw();
+    });
     try {
       d = await queue();
     } catch (e) {
-      (d = null), (err = String(e));
+      d = null;
+      err = String(e);
     }
     done();
     redraw();
   };
-  const toggle = (k: string) => () => (ui.open.has(k) ? ui.open.delete(k) : ui.open.add(k), redraw());
-  const img = async (p: string) =>
-    p in imgs ? !!imgs[p] : ((imgs[p] = ""), (imgs[p] = (await image(p)) ?? ""), redraw(), !!imgs[p]);
+  const toggle = (k: string) => () => {
+    if (!ui.open.delete(k)) ui.open.add(k);
+    redraw();
+  };
+  const img = async (p: string) => {
+    if (!(p in imgs)) {
+      imgs[p] = "";
+      imgs[p] = (await image(p)) ?? "";
+      redraw();
+    }
+    return !!imgs[p];
+  };
   // Opening a row reads its verdicts, then the newest one's screenshots and, after a design stage, the design's PNGs.
   const open = (c: QueueCard, r: QueueRow) => async () => {
     const key = `${c.name}#${r.issue}`;
@@ -169,14 +188,20 @@ export function queueTab(draw: (kids: Kid[]) => void) {
   const op =
     (fleet: string, name: string, f: Record<string, string> = {}, busy = "") =>
     async () => {
-      if (busy) (ui.busy[fleet] = busy), redraw();
+      if (busy) {
+        ui.busy[fleet] = busy;
+        redraw();
+      }
       const r = await post(name, { op: name, fleet, mtime: d?.mtime ?? "", ...f });
       delete ui.busy[fleet];
       ui.msg = [r.ok ? "g" : "r", r.ok ? r.message : `${r.code}: ${r.message}`];
       await load();
     };
   const names = () => [...(d?.fleets ?? []).map((c) => c.name), "all"];
-  const pick = (name: string) => () => ((ui.repo = name), redraw());
+  const pick = (name: string) => () => {
+    ui.repo = name;
+    redraw();
+  };
   /** #367: a sideways swipe or ←/→: the next (`k` 1) or previous (-1) repo. */
   const step = (k: number) => {
     const ns = names(),
@@ -279,10 +304,10 @@ export function queueTab(draw: (kids: Kid[]) => void) {
               a(threadHref(r.open.thread), `asked in ${r.open.title || r.open.thread} · ${r.open.thread}`),
             ),
         ),
-      r.open && d!.rw && answer(r.open.ask, "Send"),
+      r.open && d?.rw && answer(r.open.ask, "Send"),
       r.decided != null && h("p", {}, `decided by default: ${r.decided}`),
-      r.decided != null && r.ask && d!.rw && answer(r.ask, "change"),
-      r.mv && d!.rw && h("p", { class: "btns" }, mv("up", "before", r.up), mv("down", "after", r.down)),
+      r.decided != null && r.ask && d?.rw && answer(r.ask, "change"),
+      r.mv && d?.rw && h("p", { class: "btns" }, mv("up", "before", r.up), mv("down", "after", r.down)),
       ...verify(c, r),
       head("LINKS"),
       links(c, r),
@@ -294,11 +319,11 @@ export function queueTab(draw: (kids: Kid[]) => void) {
     );
   };
   // herdsman#576: the verify mark (on, off, by UI paths) and the repro mark (on, off); a paired device sets each.
-  const verify = (c: QueueCard, r: QueueRow): (Kid | false)[] => {
+  const verify = (c: QueueCard, r: QueueRow): (Kid | false | undefined)[] => {
     const m = c.marks[r.issue];
     if (!m) return [];
     const btns = (key: string, now: string | null | undefined) =>
-      d!.rw &&
+      d?.rw &&
       h(
         "p",
         { class: "btns" },
@@ -321,9 +346,8 @@ export function queueTab(draw: (kids: Kid[]) => void) {
   };
   // herdsman#420: a repro PASS's proof: `run`, the command and its output failing on the base, then passing at the
   // head; `verify`, the quoted reason, and whether a verify PASS at the same head exists yet.
-  const repro = (x: Verdict, all: Verdict[]): Kid[] => {
-    const p = x.repro!,
-      sha = x.sha.slice(0, 7);
+  const repro = (x: Verdict, p: Repro, all: Verdict[]): Kid[] => {
+    const sha = x.sha.slice(0, 7);
     if (p.kind !== "verify") {
       const f = p.text
         .split("```")
@@ -376,7 +400,7 @@ export function queueTab(draw: (kids: Kid[]) => void) {
                 span("m", ` ${x.sha.slice(0, 7)}`),
               ),
               x.findings && h("code", {}, x.findings),
-              ...(x.repro ? repro(x, v) : []),
+              ...(x.repro ? repro(x, x.repro, v) : []),
               j === 0 &&
                 x.shots.length > 0 &&
                 h(
@@ -475,7 +499,7 @@ export function queueTab(draw: (kids: Kid[]) => void) {
       .filter((g) => gs[g].length && (!only || g === only))
       .map((g) => {
         const ns = tree(gs[g]),
-          t = (r: QueueRow) => (r.t ? dur(Math.max(0, d!.now - r.t)) : "");
+          t = (r: QueueRow) => (r.t ? dur(Math.max(0, (d?.now ?? r.t) - r.t)) : "");
         const rows =
           g === "queue"
             ? queued(c, ns)
@@ -505,13 +529,17 @@ export function queueTab(draw: (kids: Kid[]) => void) {
     );
   };
   // #365: search, quick filters, a label, ticks; [queue N] queues the ticked (in tick order) as needs-check.
-  const bl = (c: QueueCard) => {
-    const s = (ui.bl[c.name] ??= { q: "", on: [], label: "", ticks: [] }),
-      k = `bl:${c.name}`,
-      { all, shown } = backlog(c, d!.now, s);
+  const bl = (c: QueueCard, b: NonNullable<QueueCard["backlog"]>) => {
+    const s = ui.bl[c.name] ?? { q: "", on: [], label: "", ticks: [] };
+    ui.bl[c.name] = s;
+    const k = `bl:${c.name}`,
+      { all, shown } = backlog(c, d?.now ?? 0, s);
     s.ticks = s.ticks.filter((n) => all.some((r) => r.n === n));
     const labels = [...new Set(all.flatMap((r) => r.labels))].sort(),
-      set = (f: Partial<Bl>) => (Object.assign(s, f), redraw());
+      set = (f: Partial<Bl>) => {
+        Object.assign(s, f);
+        redraw();
+      };
     const tick = (n: number) => () =>
       set({ ticks: s.ticks.includes(n) ? s.ticks.filter((x) => x !== n) : [...s.ticks, n] });
     return h(
@@ -568,9 +596,9 @@ export function queueTab(draw: (kids: Kid[]) => void) {
                 span("m", ` ${dur(Math.round(r.age))}`),
               ),
             ),
-            h("p", { class: "m" }, `read ${c.backlog!.ago} ago · [Drive now] reads it again`),
+            h("p", { class: "m" }, `read ${b.ago} ago · [Drive now] reads it again`),
             s.ticks.length > 0 &&
-              d!.rw &&
+              d?.rw &&
               h(
                 "button",
                 { on: () => op(c.name, "bqueue", { issues: s.ticks.splice(0).join(",") })() },
@@ -583,7 +611,7 @@ export function queueTab(draw: (kids: Kid[]) => void) {
   // #162: a fleet's card in its colour, needing you first; a paused fleet folds to one line (a tap opens it).
   const fleet = (c: QueueCard, all: boolean) => {
     const button = (o: string, label: string, busy = "") =>
-      d!.rw && h("button", { on: op(c.name, o, {}, busy) }, label);
+      d?.rw && h("button", { on: op(c.name, o, {}, busy) }, label);
     const need = c.need > 0 && span("tag r", `! ${c.need} need you`),
       k = `card:${c.name}`;
     const style = `border-left-color:var(--${c.k})`,
@@ -606,7 +634,7 @@ export function queueTab(draw: (kids: Kid[]) => void) {
               ),
             )
           : []),
-        c.backlog && bl(c),
+        c.backlog && bl(c, c.backlog),
       ];
     if (c.paused != null)
       return h(
@@ -638,7 +666,7 @@ export function queueTab(draw: (kids: Kid[]) => void) {
       h("p", {}, h("b", {}, "what the marks mean "), h("button", { on: toggle("legend") }, "close")),
       ...Object.entries(HINT).map(([w, t]) => h("p", {}, `${w} = ${t}`)),
       ...DOTS.map((t) => h("p", {}, t)),
-      ...d!.fleets.flatMap((c) =>
+      ...(d?.fleets ?? []).flatMap((c) =>
         c.serial.map((g, i) => h("p", {}, `🔒${g} one at a time: touches ${c.paths[i] ?? ""}`)),
       ),
     );

@@ -1,5 +1,10 @@
 // The tabs' herdsman client: every call goes through `cooee.fetch` to this backend, which forwards `/api/v1/*`.
 import {
+  type Events,
+  type FleetsTab,
+  type HostTab,
+  type IssueView,
+  type NeedsTab,
   parseEvents,
   parseFleets,
   parseHost,
@@ -7,11 +12,6 @@ import {
   parseNeeds,
   parseQueue,
   parseState,
-  type Events,
-  type FleetsTab,
-  type HostTab,
-  type IssueView,
-  type NeedsTab,
   type QueueTab,
   type Reply,
   type State,

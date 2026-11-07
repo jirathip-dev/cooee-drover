@@ -50,7 +50,13 @@ function herdsman(
 
 const text = (e: Kid): string => (typeof e === "string" ? e : e.k.map(text).join(""));
 const mem = (): Store & { l: Later } => {
-  const s = { l: {} as Later, get: () => structuredClone(s.l), set: (l: Later) => void (s.l = l) };
+  const s = {
+    l: {} as Later,
+    get: () => structuredClone(s.l),
+    set: (l: Later) => {
+      s.l = l;
+    },
+  };
   return s;
 };
 
@@ -126,7 +132,10 @@ const needs = (f: Partial<NeedsTab>): NeedsTab => ({ ...structuredClone(raw), ..
 
 test("63: a card per open ask with its options and free text, a count badge; a tap answers, the card goes, the badge drops", async () => {
   const n = needs({ asks: [askOf("q1", { options: ["one", "two"], recommend: 2 }), askOf("q2")] });
-  const h = herdsman(n, (p) => ((n.asks = n.asks.filter((a) => a.ask.id !== p.f.id)), OK));
+  const h = herdsman(n, (p) => {
+    n.asks = n.asks.filter((a) => a.ask.id !== p.f.id);
+    return OK;
+  });
   const v = await open();
   assert.equal(v.badge(), "2");
   assert.equal(v.cards().length, 2);
@@ -148,7 +157,7 @@ test("63: a card per open ask with its options and free text, a count badge; a t
   assert.equal(v.cards().length, 1);
   assert.doesNotMatch(v.all(), /1\. one/);
   // Free text: typed, then Send.
-  (v.els().find((e) => e.t === "input")!.a.oninput as (s: string) => void)("ship it");
+  (must(v.els().find((e) => e.t === "input")).a.oninput as (s: string) => void)("ship it");
   await v.tap("Send");
   assert.deepEqual(h.posts[1]?.f, { op: "answer", mtime: raw.mtime, fleet: base.ask.fleet, id: "q2", text: "ship it" });
   assert.equal(v.badge(), "0");
@@ -182,11 +191,11 @@ test("64: a routine ask reads its default and countdown, an owner ask that it wa
 
 test("65: a blocked lane's menu answered by tap, with the menu's hash (the stale-menu guard); sent, the card clears", async () => {
   const n = needs({ asks: [], blocked: [menu()] });
-  const h = herdsman(n, (p) =>
-    p.f.h === "8812"
-      ? ((n.blocked = []), '{"ok":true,"code":"OK","message":"sent"}')
-      : '{"ok":false,"code":"STALE","message":"menu changed — refreshed"}',
-  );
+  const h = herdsman(n, (p) => {
+    if (p.f.h !== "8812") return '{"ok":false,"code":"STALE","message":"menu changed — refreshed"}';
+    n.blocked = [];
+    return '{"ok":true,"code":"OK","message":"sent"}';
+  });
   const v = await open();
   await v.tap("1. Yes");
   assert.deepEqual(h.posts[0], {
@@ -245,7 +254,7 @@ test("67: a needs-human card: why, verdict, PR; one more round shows its pending
   const v = await open();
   assert.match(text(v.card(0)), /#9 a title · round limit reached/);
   assert.match(text(v.card(0)), /FAIL: a finding · PR #12 · CI green/);
-  const pr = v.els().find((e) => text(e) === "PR #12")!;
+  const pr = must(v.els().find((e) => text(e) === "PR #12"));
   assert.equal(pr.a.href, "https://github.com/example/repo/pull/12");
   const done = v.tap("one more round");
   assert.match(v.all(), /⟳ one more round · starting a lane…/, "before herdsman answers");

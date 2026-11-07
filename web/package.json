@@ -6,6 +6,8 @@
   "scripts": {
     "build": "for m in queue lanes asks fleets; do esbuild src/$m.ts --bundle --minify --format=esm --target=es2022 --outfile=dist/$m.js || exit 1; done",
     "check": "tsc --noEmit",
+    "lint": "biome check src test",
+    "trial": "tsc-rs -p tsconfig.json",
     "test": "node --test \"test/*.test.ts\""
   },
   "devDependencies": {

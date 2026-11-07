@@ -3,7 +3,7 @@
 // serves the recorded `/api/v1` fixtures, holds a read when a test says so, and records each form POST.
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { test, type TestContext } from "node:test";
+import { type TestContext, test } from "node:test";
 import { asksTab, type Later, type Store } from "../src/lib/asks.ts";
 import type { El, Kid } from "../src/lib/dom.ts";
 import { fleetsTab } from "../src/lib/fleets.ts";
@@ -38,7 +38,11 @@ function herdsman(api: Record<string, unknown>, ev: Ev[] = fx("events").list, im
       return answer(JSON.stringify(api[name]));
     },
   };
-  const release = () => (hold.clear(), waiting.forEach((r) => r()), (waiting = []));
+  const release = () => {
+    hold.clear();
+    for (const r of waiting) r();
+    waiting = [];
+  };
   return { posts, gets, hold, release };
 }
 const api = () => ({
@@ -61,7 +65,9 @@ function view() {
     return (must(f.at(-1)).a.on as (v: string) => unknown)("");
   };
   return {
-    draw: (k: Kid[]) => void (kids = k),
+    draw: (k: Kid[]) => {
+      kids = k;
+    },
     els,
     all,
     tappable,
@@ -69,7 +75,12 @@ function view() {
     cards: () => els().filter((e) => e.a.class === "ask"),
   };
 }
-const mem = (l: Later = {}): Store => ({ get: () => structuredClone(l), set: (x) => void (l = x) });
+const mem = (l: Later = {}): Store => ({
+  get: () => structuredClone(l),
+  set: (x) => {
+    l = x;
+  },
+});
 const flush = () => new Promise<void>((r) => setImmediate(r));
 const strip = (v: ReturnType<typeof view>) => v.els().filter((e) => e.a.class === "m strip").length;
 const raw: NeedsTab = fx("needs");
@@ -111,7 +122,10 @@ async function slowReload(
   assert.equal(strip(v), 1, "a strip once the read runs past 300 ms");
   assert.ok(v.all().endsWith(page), "the page stays under the strip");
   const n = h.posts.length;
-  for (const tap of taps) v.tap(tap), await flush();
+  for (const tap of taps) {
+    v.tap(tap);
+    await flush();
+  }
   assert.equal(h.posts.length, n + 1, "a tap on the page still posts");
   h.release();
   await again;

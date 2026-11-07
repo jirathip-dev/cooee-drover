@@ -6,11 +6,11 @@ import fs from "node:fs";
 import { test } from "node:test";
 import type { El, Kid } from "../src/lib/dom.ts";
 import { fleetsTab } from "../src/lib/fleets.ts";
-import type { Ev } from "../src/lib/types.ts";
+import type { Ev, FleetsTab, HostTab, State } from "../src/lib/types.ts";
 import { must } from "./must.ts";
 
 const fx = (n: string) => JSON.parse(fs.readFileSync(new URL(`../fixtures/${n}.json`, import.meta.url), "utf8"));
-type Api = { queue: any; host: any; state: any; events: Ev[]; down?: string };
+type Api = { queue: FleetsTab; host: HostTab; state: State; events: Ev[]; down?: string };
 const api = (): Api => ({ queue: fx("queue"), host: fx("host"), state: fx("state"), events: fx("events").list });
 
 type Post = { path: string; f: Record<string, string> };
@@ -54,7 +54,7 @@ async function open() {
   const one = (s: string | RegExp, k?: Kid[]) => {
     const f = els(k).filter((e) => e.a.on && (typeof s === "string" ? text(e) === s : s.test(text(e))));
     assert.ok(f.length, `nothing tappable reads ${s}:\n${text({ t: "", a: {}, k: kids })}`);
-    return f.at(-1)!;
+    return must(f.at(-1));
   };
   const tap = async (s: string | RegExp, k?: Kid[]) => (one(s, k).a.on as (v: string) => unknown)("");
   return { els, one, tap, all: () => text({ t: "", a: {}, k: kids }) };
@@ -70,15 +70,19 @@ const ev = (a: Api, seq: number, ago: number, f: Partial<Ev> = {}): Ev => ({
 });
 
 test("the recorded host, events and queue config fit the contract; a retyped field breaks it, naming it", async () => {
-  const a = api();
-  a.queue.fleets[0].config.pipe.stages[0].here = "4";
+  const a = api(),
+    q = fx("queue");
+  q.fleets[0].config.pipe.stages[0].here = "4";
+  a.queue = q;
   herdsman(a);
   assert.match(
     (await open()).all(),
     /herdsman \/api\/v1\/queue broke the contract at fleets\[0\]\.config\.pipe\.stages\[0\]\.here/,
   );
-  const b = api();
-  b.host.hosts[0].to = 1;
+  const b = api(),
+    hs = fx("host");
+  hs.hosts[0].to = 1;
+  b.host = hs;
   herdsman(b);
   assert.match((await open()).all(), /herdsman \/api\/v1\/host broke the contract at hosts\[0\]\.to/);
 });
@@ -106,7 +110,9 @@ test("80: a fleet opens to its grouped settings and its stage graph", async () =
     /◫ gates gate · herdsmanCI green · PASS at head · mergeableci_red → implconflict → update in impl · ≤3 rounds, then park✓ merge into staging/,
   );
   assert.doesNotMatch(all, /push → rev|PASS → gates|ok → merge/, "the spine draws no outcome line");
-  a.queue.fleets[0].config.pipe.bad = [{ rule: "NO_LIMIT", msg: "loop rev has no rounds", stage: "rev", line: 12 }];
+  must(a.queue.fleets[0]).config.pipe.bad = [
+    { rule: "NO_LIMIT", msg: "loop rev has no rounds", stage: "rev", line: 12 },
+  ];
   herdsman(a);
   const w = await open();
   await w.tap(/^fleet-1 /);
@@ -118,12 +124,13 @@ test("80: a fleet opens to its grouped settings and its stage graph", async () =
 
 test("81: role pickers: the effort list follows the harness; [Set] posts the role's harness, model and effort", async () => {
   const a = api();
-  a.queue.fleets[0].config.models = ["claude-opus-5-5", "claude-sonnet-5-5"];
+  must(a.queue.fleets[0]).config.models = ["claude-opus-5-5", "claude-sonnet-5-5"];
   const h = herdsman(a, ({ f }) => `{"ok":true,"code":"OK","message":"${f.fleet} ${f.role}: effort ${f.effort}"}`);
   const v = await open();
   await v.tap(/^fleet-1 /);
-  const roleOf = (n: string) => v.els().find((e) => e.a.class === "role" && text(e).startsWith(n))!;
-  const sel = (n: string, k: string) => v.els(roleOf(n).k).find((e) => e.t === "select" && e.a["aria-label"] === k)!;
+  const roleOf = (n: string) => must(v.els().find((e) => e.a.class === "role" && text(e).startsWith(n)));
+  const sel = (n: string, k: string) =>
+    must(v.els(roleOf(n).k).find((e) => e.t === "select" && e.a["aria-label"] === k));
   const opts = (n: string, k: string) => sel(n, k).k.map(text);
   assert.deepEqual(opts("impl", "model"), ["claude-opus-5-5", "claude-sonnet-5-5"]);
   (sel("impl", "harness").a.oninput as (v: string) => void)("dsh");
@@ -151,11 +158,11 @@ test("81: role pickers: the effort list follows the harness; [Set] posts the rol
   );
   assert.match(v.all(), /fleet-1 impl: effort medium/);
   assert.equal(h.gets.filter((g) => g === "/api/v1/queue").length, 2, "read again after the tap");
-  a.queue.fleets[0].config.models = [];
+  must(a.queue.fleets[0]).config.models = [];
   herdsman(a);
   const w = await open();
   await w.tap(/^fleet-1 /);
-  const m = w.els().find((e) => e.t === "select" && e.a["aria-label"] === "model")!;
+  const m = must(w.els().find((e) => e.t === "select" && e.a["aria-label"] === "model"));
   assert.equal(m.a.disabled, "", "no models: the model stays as set");
   assert.match(w.all(), /add models = \[\.\.\.\] to fleet\.toml to pick a model/);
 });
@@ -165,7 +172,7 @@ test("82: a tap on a conductor model posts `cond`; read-only shows them disabled
   const h = herdsman(a);
   const v = await open();
   await v.tap(/^fleet-1 /);
-  const cg = v.els().find((e) => e.a.class === "cg" && text(e).startsWith("Conductor"))!;
+  const cg = must(v.els().find((e) => e.a.class === "cg" && text(e).startsWith("Conductor")));
   assert.equal(v.els(cg.k).find((e) => text(e) === "claude-opus-5-5")?.a["aria-pressed"], "true");
   await v.tap("claude-sonnet-5-5", cg.k);
   assert.deepEqual(
@@ -177,7 +184,7 @@ test("82: a tap on a conductor model posts `cond`; read-only shows them disabled
   herdsman(a);
   const w = await open();
   await w.tap(/^fleet-1 /);
-  const b = w.els().find((e) => e.t === "button" && text(e) === "claude-sonnet-5-5")!;
+  const b = must(w.els().find((e) => e.t === "button" && text(e) === "claude-sonnet-5-5"));
   assert.equal(b.a.on, undefined);
   assert.equal(b.a.disabled, "");
 });
@@ -246,7 +253,7 @@ test("85: fleet.toml unread: herdsman's own error, plainly; herdsman down: the c
   Object.assign(a.queue, { error: real, fleets: [] });
   herdsman(a);
   const v = await open();
-  const e = v.els().find((x) => text(x) === real)!;
+  const e = must(v.els().find((x) => text(x) === real));
   assert.equal(e.a.class, "r");
   assert.match(v.all(), /HOSTS FOR LANES.*ACTIVITY/);
   const b = api();
@@ -259,12 +266,9 @@ test("85: fleet.toml unread: herdsman's own error, plainly; herdsman down: the c
 
 test("75: [off] on a host asks first; [yes] posts `host`; it reads off and offers [on]", async () => {
   const a = api();
-  Object.assign(a.host.hosts[0], { to: "off", words: "up · admits lanes", lanes: 22 });
+  Object.assign(must(a.host.hosts[0]), { to: "off", words: "up · admits lanes", lanes: 22 });
   const h = herdsman(a, ({ f }) => {
-    Object.assign(
-      a.host.hosts.find((x: { name: string }) => x.name === f.host),
-      { to: "on", words: "off · not used for lanes" },
-    );
+    Object.assign(must(a.host.hosts.find((x) => x.name === f.host)), { to: "on", words: "off · not used for lanes" });
     return `{"ok":true,"code":"OK","message":"${f.host} off"}`;
   });
   const v = await open();
@@ -290,9 +294,12 @@ test("77: fleet disk against its budget; [remove orphans] and [reap] ask first, 
   const a = api();
   Object.assign(a.host, { orphans: 2, leftovers: { n: 3, mb: "120" } });
   const h = herdsman(a, ({ f }) => {
-    if (f.op === "reap")
-      return ((a.host.leftovers = null), '{"ok":true,"code":"OK","message":"reaped 3 leftover process(es)"}');
-    return ((a.host.orphans = 0), '{"ok":true,"code":"OK","message":"removed 2 orphan folder(s)"}');
+    if (f.op === "reap") {
+      a.host.leftovers = null;
+      return '{"ok":true,"code":"OK","message":"reaped 3 leftover process(es)"}';
+    }
+    a.host.orphans = 0;
+    return '{"ok":true,"code":"OK","message":"removed 2 orphan folder(s)"}';
   });
   const v = await open();
   assert.match(v.all(), /worktrees ▕██████░░░░░░▏ 38\.9 GB of 80 GB budget · walked 2m ago/);

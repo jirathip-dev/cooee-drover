@@ -39,6 +39,9 @@ export function mount(kids: Kid[], css: string): void {
  * its place); the returned `done` cancels it and sets `on(false)`, before the tab's redraw. */
 export function late(on: (slow: boolean) => void): () => void {
   const t = setTimeout(on, 300, true);
-  return () => (clearTimeout(t), on(false));
+  return () => {
+    clearTimeout(t);
+    on(false);
+  };
 }
 export const strip = (slow: boolean): Kid[] => (slow ? [h("p", { class: "m strip" }, "loading…")] : []);

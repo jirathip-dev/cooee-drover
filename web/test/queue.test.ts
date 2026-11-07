@@ -61,7 +61,7 @@ async function open() {
   const one = (s: string | RegExp, k?: Kid[]) => {
     const f = find(s, k);
     assert.ok(f.length, `nothing tappable reads ${s}:\n${text({ t: "", a: {}, k: kids })}`);
-    return f.at(-1)!;
+    return must(f.at(-1));
   };
   const tap = async (s: string | RegExp | El) =>
     ((typeof s === "object" && "t" in s ? s : one(s)).a.on as (v: string) => unknown)("");
@@ -114,7 +114,7 @@ test("37: a fleet card in its colour; a paused fleet folds to one line; needs-yo
   Object.assign(row(q, 0, 30), { state: "needs-human", tone: "r" });
   herdsman(q);
   const v = await open();
-  const card = v.els().find((e) => e.a.class?.toString().startsWith("fc"))!;
+  const card = must(v.els().find((e) => e.a.class?.toString().startsWith("fc")));
   assert.equal(card.a.class, "fc off");
   assert.equal(card.a.style, `border-left-color:var(--${must(q.fleets[0]).k})`);
   assert.equal(text(card), "fleet-1 ● paused · 6d · 1 laneResume", "one line");
@@ -157,7 +157,7 @@ test("39: groups, queue places, `+ N more` opening in place, stage times, done t
   await v.tap("+ 3 more");
   assert.match(v.all(), /#103 queued #5 .*\+ 3 more.*#104 queued #6 .*#106 queued #8 /);
   await v.tap(`done today: ${must(q.fleets[0]).done_n}`);
-  const pr = v.els().find((e) => e.t === "a" && text(e) === "PR #29")!;
+  const pr = must(v.els().find((e) => e.t === "a" && text(e) === "PR #29"));
   assert.equal(pr.a.href, "https://github.com/example/repo/pull/29");
 });
 
@@ -304,13 +304,13 @@ test("46: waiting: decision with its options; a link to the asking thread", asyn
   const v = await open();
   v.t.step(2);
   await v.tap(at(4));
-  const link = v.els().find((e) => e.t === "a" && text(e).startsWith("asked in"))!;
+  const link = must(v.els().find((e) => e.t === "a" && text(e).startsWith("asked in")));
   assert.equal(text(link), "asked in queue plan · t6");
   assert.equal(link.a.href, "/t/t6");
   assert.deepEqual(v.find(/^\d\. /).map(text), ["2. right (recommended)", "1. left"]);
   await v.tap("2. right");
   assert.deepEqual(h.posts[0]?.f, { op: "answer", fleet: "fleet-3", mtime: q.mtime, id: "q12", choice: "2" });
-  (v.els().find((e) => e.t === "input")!.a.oninput as (s: string) => void)("neither");
+  (must(v.els().find((e) => e.t === "input")).a.oninput as (s: string) => void)("neither");
   await v.tap("Send");
   assert.deepEqual(h.posts[1]?.f, { op: "answer", fleet: "fleet-3", mtime: q.mtime, id: "q12", text: "neither" });
 });
@@ -336,7 +336,7 @@ test("47: backlog: search, filters, tick 2, [queue 2]: they come back marked nee
   const v = await open();
   v.t.step(1);
   await v.tap("backlog (3)");
-  const search = v.els().find((e) => e.a.type === "search")!.a.oninput as (s: string) => void;
+  const search = must(v.els().find((e) => e.a.type === "search")).a.oninput as (s: string) => void;
   search("fix");
   assert.match(v.all(), /backlog \(2 of 3\)/);
   search("");
@@ -365,7 +365,7 @@ test("48: the [?] legend explains every state and dot; serial groups' 🔒 tags"
   row(q, 0, 30).groups = ["db"];
   herdsman(q);
   const v = await open();
-  const lock = v.els().find((e) => text(e) === "🔒db")!;
+  const lock = must(v.els().find((e) => text(e) === "🔒db"));
   assert.equal(lock.a.title, "serial: one lane at a time");
   await v.tap(must(v.els().find((e) => e.a["aria-label"] === "legend")));
   for (const [w, h] of Object.entries(HINT)) assert.ok(v.all().includes(`${w} = ${h}`), w);

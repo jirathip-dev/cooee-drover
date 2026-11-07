@@ -2,8 +2,8 @@
 // v1's `queue` (each fleet's [config] sheet: settings, pipeline graph, role pickers, conductor), `host` (the hosts'
 // lanes switch, fleet disk, notifiers), `state` and `events` (activity) as a tree of `h` nodes: pure, so the tests tap
 // it under node. A destructive tap asks first; every tap shows herdsman's answer and reads it all again.
-import { events, fleets as config, host, post, state } from "./api.ts";
-import { h, late, strip, type Kid } from "./dom.ts";
+import { fleets as config, events, host, post, state } from "./api.ts";
+import { h, type Kid, late, strip } from "./dom.ts";
 import { dur } from "./queue.ts";
 import type { Bar, Conductor, Ev, FleetsTab, HostTab, Pipe, RoleRow, State } from "./types.ts";
 
@@ -32,9 +32,10 @@ export function fold(list: Ev[], imp: boolean): Ev[][] {
   const out: Ev[][] = [];
   for (const e of [...list].sort((a, b) => b.ts - a.ts || b.seq - a.seq)) {
     if (imp && !e.imp) continue;
-    const p = out.at(-1)?.[0];
-    if (p && p.fleet === e.fleet && (e.type in NOISE ? p.type === e.type : p.ts === e.ts && p.text === e.text))
-      out.at(-1)!.push(e);
+    const last = out.at(-1),
+      p = last?.[0];
+    if (last && p && p.fleet === e.fleet && (e.type in NOISE ? p.type === e.type : p.ts === e.ts && p.text === e.text))
+      last.push(e);
     else out.push([e]);
   }
   return out;
@@ -138,17 +139,24 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
     slow = false;
   const ui: UI = { open: new Set(), msg: ["", ""], imp: false, shown: 100, sure: "", pick: {} };
   const redraw = () => draw(view());
-  const got = <T>(r: PromiseSettledResult<T>): T | null =>
-    r.status === "fulfilled"
-      ? r.value
-      : (err.push(r.reason instanceof Error ? r.reason.message : String(r.reason)), null);
+  const got = <T>(r: PromiseSettledResult<T>): T | null => {
+    if (r.status === "fulfilled") return r.value;
+    err.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
+    return null;
+  };
   const load = async () => {
-    const done = late((s) => ((slow = s), s && redraw()));
+    const done = late((s) => {
+      slow = s;
+      if (s) redraw();
+    });
     err = [];
     const [a, b, c] = await Promise.allSettled([config(), host(), state()]);
-    (q = got(a)), (hs = got(b)), (st = got(c));
+    q = got(a);
+    hs = got(b);
+    st = got(c);
     if (st) ev = got((await Promise.allSettled([events(Math.max(0, st.seq - 500), st.seq)]))[0])?.list ?? [];
-    (busy = false), done();
+    busy = false;
+    done();
     redraw();
   };
   const first = () => ev.reduce((m, e) => Math.min(m, e.seq), Infinity);
@@ -157,12 +165,18 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
     ui.shown += 100;
     const f = first();
     if (fold(ev, ui.imp).length < ui.shown && f > 1 && f !== Infinity) {
-      const e = await events(Math.max(0, f - 501), f - 1).catch((x: Error) => (err.push(x.message), null));
+      const e = await events(Math.max(0, f - 501), f - 1).catch((x: Error) => {
+        err.push(x.message);
+        return null;
+      });
       if (e && !e.refresh) ev = [...e.list, ...ev];
     }
     redraw();
   };
-  const toggle = (k: string) => () => (ui.open.has(k) ? ui.open.delete(k) : ui.open.add(k), redraw());
+  const toggle = (k: string) => () => {
+    if (!ui.open.delete(k)) ui.open.add(k);
+    redraw();
+  };
   const op = (name: string, f: Record<string, string>) => async () => {
     ui.sure = "";
     const r = await post(name, { op: name, ...f });
@@ -176,14 +190,34 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
           "sure",
           `${ask} `,
           h("button", { on: go }, "yes"),
-          h("button", { on: () => ((ui.sure = ""), redraw()) }, "cancel"),
+          h(
+            "button",
+            {
+              on: () => {
+                ui.sure = "";
+                redraw();
+              },
+            },
+            "cancel",
+          ),
         )
-      : h("button", { on: () => ((ui.sure = key), redraw()) }, label);
+      : h(
+          "button",
+          {
+            on: () => {
+              ui.sure = key;
+              redraw();
+            },
+          },
+          label,
+        );
 
   // #2 #16: a role's harness, model and effort pickers (the effort list follows the harness), [Set] posts `set`.
   const role = (d: FleetsTab, c: Card, r: RoleRow) => {
     const g = c.config,
-      p = (ui.pick[`${c.name}/${r.name}`] ??= {});
+      pk = `${c.name}/${r.name}`,
+      p = ui.pick[pk] ?? {};
+    ui.pick[pk] = p;
     const harness = p.harness ?? r.harness,
       model = p.model ?? r.model ?? "",
       effort = p.effort ?? r.effort ?? "";
@@ -194,7 +228,14 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
     const pick = (k: string, cur: string, def: string, opts: string[], off = false) =>
       h(
         "select",
-        { "aria-label": k, oninput: (v) => ((p[k] = v), redraw()), ...(off ? { disabled: "" } : {}) },
+        {
+          "aria-label": k,
+          oninput: (v) => {
+            p[k] = v;
+            redraw();
+          },
+          ...(off ? { disabled: "" } : {}),
+        },
         !opts.includes(cur) && h("option", { value: "", selected: "" }, cur || `default (${def})`),
         ...opts.map((o) => h("option", o === cur ? { selected: "" } : {}, o)),
       );
@@ -421,7 +462,17 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
       color = new Map(t.fleets.map((f) => [f.name, f.color])),
       out: Kid[] = [head("ACTIVITY", s(rows.length, ui.imp ? "important row" : "row"))];
     const chip = (label: string, imp: boolean) =>
-      h("button", { "aria-pressed": String(ui.imp === imp), on: () => ((ui.imp = imp), redraw()) }, label);
+      h(
+        "button",
+        {
+          "aria-pressed": String(ui.imp === imp),
+          on: () => {
+            ui.imp = imp;
+            redraw();
+          },
+        },
+        label,
+      );
     out.push(h("p", { class: "btns" }, chip("all", false), chip("important", true)));
     let at = "";
     for (const evs of rows.slice(0, ui.shown)) {
@@ -429,7 +480,10 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
       if (!e) continue;
       const g = when(e.ts, t.now, t.tz),
         k = `ev:${e.seq}`;
-      if (g !== at) out.push(h("h3", {}, (at = g)));
+      if (g !== at) {
+        at = g;
+        out.push(h("h3", {}, g));
+      }
       const words =
         e.type in NOISE && evs.length > 1
           ? `${e.type} ×${evs.length} · ${NOISE[e.type]}`

@@ -15,9 +15,21 @@ addEventListener("pointerup", (e) => {
   const dx = from ? e.clientX - from.x : 0,
     dy = from ? e.clientY - from.y : 0;
   from = null;
-  if (Math.abs(dx) > 40 && Math.abs(dx) > 2 * Math.abs(dy)) (swiped = true), t.step(-Math.sign(dx));
+  if (Math.abs(dx) > 40 && Math.abs(dx) > 2 * Math.abs(dy)) {
+    swiped = true;
+    t.step(-Math.sign(dx));
+  }
 });
-addEventListener("click", (e) => swiped && (e.preventDefault(), e.stopPropagation(), (swiped = false)), true);
+addEventListener(
+  "click",
+  (e) => {
+    if (!swiped) return;
+    e.preventDefault();
+    e.stopPropagation();
+    swiped = false;
+  },
+  true,
+);
 addEventListener("keydown", (e) => {
   const k = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
   if (k && !(e.target as Element).closest?.("input, select")) t.step(k);

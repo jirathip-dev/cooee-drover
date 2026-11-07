@@ -4,7 +4,7 @@
 // countdown and menu), each `needs-human` issue (verdict, screenshots, merge anyway / one more round / park), the
 // [later] fold, and the answers herdsman logged `answer-undelivered`.
 import { events, image, needs, post, uniq } from "./api.ts";
-import { h, late, strip, type Kid } from "./dom.ts";
+import { h, type Kid, late, strip } from "./dom.ts";
 import { threadHref } from "./links.ts";
 import type { Blocked, Ev, NeedAsk, NeedIssue, NeedsTab, Reply } from "./types.ts";
 
@@ -66,27 +66,39 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
     sure = new Set<string>();
   const redraw = () => draw([...strip(slow), ...(d ? view(d) : err ? [h("p", { class: "r" }, err)] : [])]);
   const load = async () => {
-    const done = late((s) => ((slow = s), s && redraw()));
+    const done = late((s) => {
+      slow = s;
+      if (s) redraw();
+    });
     try {
       d = await needs();
       // #143: the answers' delivery tries, from the newest 500 events on, then only the new ones.
       if (since < 0) since = Math.max(0, (await events(0)).seq - 500);
       const e = await events(since);
-      if (!e.refresh)
-        (tries = uniq([...tries, ...e.list.filter((x) => x.type.startsWith("answer-"))], (x) => x.seq)),
-          (since = e.seq);
+      if (!e.refresh) {
+        tries = uniq([...tries, ...e.list.filter((x) => x.type.startsWith("answer-"))], (x) => x.seq);
+        since = e.seq;
+      }
       at = clock();
       // A recorded one more round is herdsman's line from now on.
       for (const k of pending)
         if (!d.issues.some((s) => `nh:${s.fleet}#${s.issue}` === k && !s.pending)) pending.delete(k);
     } catch (e) {
-      (d = null), (err = String(e));
+      d = null;
+      err = String(e);
     }
     done();
     redraw();
     // #412 #417: each image once (per ask, per verdict), drawn when it comes.
     const want = d ? [...d.asks.flatMap(pngs), ...d.issues.flatMap(shots)].filter(([, , k]) => !(k in imgs)) : [];
-    for (const [p, , k] of want) (imgs[k] = ""), image(p).then((u) => u && ((imgs[k] = u), redraw()));
+    for (const [p, , k] of want) {
+      imgs[k] = "";
+      image(p).then((u) => {
+        if (!u) return;
+        imgs[k] = u;
+        redraw();
+      });
+    }
   };
   const op = (key: string, name: string, f: Record<string, string>) => async () => {
     const r: Reply = await post(name, { op: name, mtime: d?.mtime ?? "", ...f });
@@ -111,7 +123,8 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
     const l = store.get();
     for (const c of cards) l[c.key] = { until: clock() + 12 * 3600, sig: c.sig };
     store.set(l);
-    (unfold = false), redraw();
+    unfold = false;
+    redraw();
   };
   type Bit = Kid | false | null | undefined;
   type Card = { key: string; sig: string; body: Bit[] };
@@ -148,7 +161,7 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
             ),
         ),
         ...figs(pngs(a)),
-        d!.rw &&
+        d?.rw &&
           h(
             "p",
             { class: "btns" },
@@ -185,7 +198,7 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
         h("code", {}, m.command),
         left != null && h("p", { class: "r" }, `auto-denies in ${mmss(left)}`),
         h("p", {}, m.question),
-        d!.rw &&
+        d?.rw &&
           h(
             "p",
             { class: "btns" },
@@ -221,8 +234,16 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
         ? [`PASS at ${s.pass.slice(0, 7)}${s.stale ? " (not the head)" : ""} · `, ...pr, ` · ${s.mergeable}`]
         : [`FAIL: ${s.fail} · `, ...pr];
     const ask = sure.has(key);
-    const merge = () => (ask ? op(key, "override", f)() : (sure.add(key), redraw()));
-    const extend = () => (pending.add(key), redraw(), op(key, "extend", f)());
+    const merge = () => {
+      if (ask) return op(key, "override", f)();
+      sure.add(key);
+      redraw();
+    };
+    const extend = () => {
+      pending.add(key);
+      redraw();
+      return op(key, "extend", f)();
+    };
     return {
       key,
       sig,
@@ -231,8 +252,8 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
         h("p", {}, `#${n} ${s.title} · ${s.why}`),
         h("p", { class: "m" }, ...v),
         ...figs(shots(s)),
-        d!.rw &&
-          d!.paired &&
+        d?.rw &&
+          d?.paired &&
           h(
             "p",
             { class: "btns" },
@@ -274,7 +295,13 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
           { class: "r later" },
           h(
             "button",
-            { class: "lk", on: () => ((unfold = !unfold), redraw()) },
+            {
+              class: "lk",
+              on: () => {
+                unfold = !unfold;
+                redraw();
+              },
+            },
             `${off.length} need you ${unfold ? "▾" : "▸"}`,
           ),
           h("button", { on: hide(unfold ? cards : on) }, "later all"),
