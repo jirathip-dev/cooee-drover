@@ -132,6 +132,7 @@ Selectors this UI answers to (from `web/src/lib/*.ts`; the fixtures' fleets are 
   card `.fc .lk` opens its config sheet `.cg` (`General`, `Pipeline`, …)
 - Ops (any button that writes): the fixture herdsman answers `READ_ONLY: the fixture herdsman takes no ops`, shown in
   the tab; a PR that changes an op's request is checked in `server.log` (`POST /api/v1/<op> 405`)
+- Images: the fixture herdsman has no `/shot/…` or `/design/…` PNGs (404), so a verdict's screenshot shows as its name
 
 ## Evidence
 
