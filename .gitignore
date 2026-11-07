@@ -2,3 +2,4 @@
 node_modules/
 .brief.md
 .mcp.lane.json
+.verify/
