@@ -3,7 +3,8 @@
 // each list (and the backlog's issues) keeps its first 3 rows, so only the shapes are recorded. A config sheet's paths
 // are replaced; `host`'s push key, devices, subscriptions and accounts emptied. herdsman#576: a queue card keeps the
 // marks of its kept rows; `issue` is the first queued row with a verdict (a repro one first, else the first row), its
-// findings replaced and a `Repro:` block's text kept to its shape (#15).
+// findings replaced and a `Repro:` block's text kept to its shape (#15). #16: `lessons`, and the first fleet's 7-day
+// `digest` with only its headings kept.
 import fs from "node:fs";
 
 const base = process.argv[2] ?? "http://127.0.0.1:7777";
@@ -23,7 +24,8 @@ const [fleet, row] = rows.find(([n, r]) => r.pr.verdict != null && repro(n, r)) 
 const fence = (t) => `\`\`\`\n${t}\n\`\`\`\n`, RUN = `Base plus commit 1:\n${fence("command text")}${fence("output text")}Head:\n${fence("command text")}${fence("output text")}`;
 
 for (const [path, file] of [["state", "state"], ["queue", "queue"], ["needs", "needs"], ["host", "host"], [`events?since=${state.seq - 40}`, "events"],
-  [`issue/${encodeURIComponent(fleet)}/${row.issue}`, "issue"]]) {
+  [`issue/${encodeURIComponent(fleet)}/${row.issue}`, "issue"], ["lessons", "lessons"],
+  [`lessons/${encodeURIComponent(state.fleets[0].name)}/digest?days=7`, "digest"]]) {
   const raw = path === "state" ? state : await read(path);
   const scrub = (s) => longest.reduce((t, [real, fake]) => t.replaceAll(real, fake), s);
   const walk = (v, key) => {
@@ -36,6 +38,7 @@ for (const [path, file] of [["state", "state"], ["queue", "queue"], ["needs", "n
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));
     if (typeof v !== "string") return v;
     if (key === "repo") return "example/repo";
+    if (file === "digest" && key === "text") return v.split("\n").map((l) => (l && !l.startsWith("#") ? "- line text" : scrub(l))).join("\n");
     if (key === "kind" && /^(build|check|gate)$/.test(v)) return v; // a pipeline stage's kind
     if (key === "note" && /^verify/.test(v)) return v; // a row's verify note
     if (TEXT.has(key) || key === "options") return `${key} text`;

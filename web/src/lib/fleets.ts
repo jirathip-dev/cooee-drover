@@ -1,16 +1,17 @@
 // The drover-fleets tab (herdsman#553 rows 75, 77, 80-85, as cooee-drover#5's amendment A keeps them), drawn from API
 // v1's `queue` (each fleet's [config] sheet: settings, pipeline graph, role pickers, conductor), `host` (the hosts'
-// lanes switch, fleet disk, notifiers), `state` and `events` (activity) as a tree of `h` nodes: pure, so the tests tap
-// it under node. A destructive tap asks first; every tap shows herdsman's answer and reads it all again.
-import { events, fleets as config, host, post, state } from "./api.ts";
+// lanes switch, fleet disk, notifiers), `lessons` (#16: each fleet's lesson runs), `state` and `events` (activity) as
+// a tree of `h` nodes: pure, so the tests tap it under node. A destructive tap asks first; every tap shows herdsman's
+// answer and reads it all again.
+import { digest, events, fleets as config, host, lessons, post, state } from "./api.ts";
 import { h, type Kid } from "./dom.ts";
 import { dur } from "./queue.ts";
-import type { Bar, Conductor, Ev, FleetsTab, HostTab, Pipe, RoleRow, State } from "./types.ts";
+import type { Bar, Conductor, Digest, Ev, FleetsTab, HostTab, Lessons, Pipe, RoleRow, State } from "./types.ts";
 
 type Card = FleetsTab["fleets"][number];
 
-/** The tab's own state: what is open, the last answer, [important], activity rows shown, the tap awaiting [yes], picks. */
-export type UI = { open: Set<string>; msg: [string, string]; imp: boolean; shown: number; sure: string; pick: Record<string, Record<string, string>> };
+/** The tab's own state: what is open, the last answer, [important], activity rows shown, the tap awaiting [yes], picks, the digest shown. */
+export type UI = { open: Set<string>; msg: [string, string]; imp: boolean; shown: number; sure: string; pick: Record<string, Record<string, string>>; dg: Digest | null };
 
 /** #170: noise a run folds into one `kind ×N` row (by kind, so a failure never shares a row with `clean`). */
 const NOISE: Record<string, string> = { clean: "lanes cleaned", "push-sent": "alerts sent", "notify-failed": "alerts that never arrived" };
@@ -36,9 +37,13 @@ export function when(t: number, now: number, tz: number): string {
   if (a < 7200) return "1h";
   if (day(t) === day(now)) return "earlier today";
   if (day(t) + 1 === day(now)) return "yesterday";
-  const x = new Date(day(t) * 86_400_000);
-  return `${MON[x.getUTCMonth()]} ${x.getUTCDate()}`;
+  return date(t, tz);
 }
+/** `t`'s date (`tz` the server's UTC offset), e.g. `nov 7`. */
+const date = (t: number, tz: number) => {
+  const x = new Date((t + tz) * 1000);
+  return `${MON[x.getUTCMonth()]} ${x.getUTCDate()}`;
+};
 
 /** The kids that show: a false, null or empty one drops. */
 const some = (k: (Kid | false | null | undefined)[]): Kid[] => k.filter((x): x is Kid => !!x);
@@ -78,14 +83,14 @@ export function pipeline(p: Pipe): Kid[] {
 
 /** The tab: `draw` gets the tree after every change; `load` reads herdsman's `queue`, `host`, `state` and newest events. */
 export function fleetsTab(draw: (kids: Kid[]) => void) {
-  let q: FleetsTab | null = null, hs: HostTab | null = null, st: State | null = null, ev: Ev[] = [], err: string[] = [], busy = true;
-  const ui: UI = { open: new Set(), msg: ["", ""], imp: false, shown: 100, sure: "", pick: {} };
+  let q: FleetsTab | null = null, hs: HostTab | null = null, ls: Lessons | null = null, st: State | null = null, ev: Ev[] = [], err: string[] = [], busy = true;
+  const ui: UI = { open: new Set(), msg: ["", ""], imp: false, shown: 100, sure: "", pick: {}, dg: null };
   const redraw = () => draw(view());
   const got = <T>(r: PromiseSettledResult<T>): T | null => (r.status === "fulfilled" ? r.value : (err.push(r.reason instanceof Error ? r.reason.message : String(r.reason)), null));
   const load = async () => {
     err = [];
-    const [a, b, c] = await Promise.allSettled([config(), host(), state()]);
-    (q = got(a)), (hs = got(b)), (st = got(c));
+    const [a, b, c, d] = await Promise.allSettled([config(), host(), state(), lessons()]);
+    (q = got(a)), (hs = got(b)), (st = got(c)), (ls = got(d));
     if (st) ev = got((await Promise.allSettled([events(Math.max(0, st.seq - 500), st.seq)]))[0])?.list ?? [];
     busy = false;
     redraw();
@@ -168,6 +173,21 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
     // #404: the new-thread defaults are herdsman's [chat]; drover shows them once v1 can write them.
     head("CHAT DEFAULTS"), h("p", { class: "m" }, "a new thread starts with its fleet's conductor (above); setting [chat] defaults here waits for herdsman's v1 write"),
   ];
+  /** #16: [digest] shows the fleet's `lesson digest` of the last 7 days; tapped again it closes. */
+  const showDigest = (fleet: string) => async () => {
+    ui.dg = ui.dg?.fleet === fleet ? null : await digest(fleet).catch((x: Error) => (err.push(x.message), null));
+    redraw();
+  };
+  // #16: per fleet its lessons setting, the last run (issue, date, state) or never, the next due; [Run lessons] asks first.
+  const lessonRows = (d: Lessons, rw: boolean, tz: number): Kid[] => [
+    head("LESSONS", "weekly lesson runs"),
+    ...d.fleets.map((f) => h("div", { class: "rw" }, h("b", {}, f.fleet), ` ${f.lessons}`,
+      ...(f.last ? [span("m", ` · last #${f.last.issue} ${date(f.last.ts, tz)} `), span(f.last.state === "merged" ? "g" : f.last.state === "open" ? "a" : "m", f.last.state)] : [span("m", " · never run")]),
+      f.next != null && span("m", ` · ${f.last ? "next" : "first run"} due ${date(f.next, tz)}`), " ",
+      rw && sure(`lesson:${f.fleet}`, "Run lessons", `Run lessons for ${f.fleet} now? It files a lessons issue and spawns its lane`, op("lesson", { fleet: f.fleet })),
+      h("button", { "aria-pressed": String(ui.dg?.fleet === f.fleet), on: showDigest(f.fleet) }, "digest"),
+      ui.dg?.fleet === f.fleet && h("pre", { class: "dg" }, ui.dg.text))),
+  ];
   // #286: the hosts lanes may run on, each [off]/[on]; #164 #186 #361: fleet disk, orphan folders, leftovers; #440 notifiers.
   const hosts = (d: HostTab): Kid[] => {
     const k = d.disk, l = d.leftovers, n = d.orphans;
@@ -211,6 +231,7 @@ export function fleetsTab(draw: (kids: Kid[]) => void) {
       ...err.map((e) => h("p", { class: "r" }, e)),
       ui.msg[1] && h("p", { class: ui.msg[0] }, ui.msg[1]),
       ...(q ? fleets(q) : []),
+      ...(ls ? lessonRows(ls, !!q?.rw, st?.tz ?? 0) : []),
       ...(hs ? hosts(hs) : []),
       ...(st ? activity(st) : []),
     ]);
@@ -225,6 +246,6 @@ button[aria-pressed=true]{background:var(--edge)}h2{font-size:.9em;color:var(--m
 .fc{background:var(--card);border:1px solid var(--edge);border-left:4px solid;border-radius:8px;padding:8px;margin:6px 0}.lk,.er{cursor:pointer}
 .cg{border-top:1px solid var(--edge);padding:4px 0}p{margin:3px 0}dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;margin:4px 0}
 dt{color:var(--mute)}dd{margin:0}.rw,.er{padding:3px 0;border-top:1px solid var(--edge)}.er p{margin-left:20px}.kg{display:inline-block;width:1.2em}
-.pd{padding-left:20px}.bar{font-family:monospace}.tag{font-size:.85em;margin-left:4px}.sure{color:var(--a)}
+.pd{padding-left:20px}.dg{white-space:pre-wrap;font-size:.85em;background:var(--bg);padding:6px;margin:4px 0}.bar{font-family:monospace}.tag{font-size:.85em;margin-left:4px}.sure{color:var(--a)}
 .g{color:var(--g)}.a{color:var(--a)}.r{color:var(--r)}.m{color:var(--mute)}
 `;

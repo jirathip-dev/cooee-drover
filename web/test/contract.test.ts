@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import { askHref, route } from "../src/lib/links.ts";
-import { parseEvents, parseIssue, parseNeeds, parseQueue, parseState } from "../src/lib/types.ts";
+import { parseDigest, parseEvents, parseIssue, parseLessons, parseNeeds, parseQueue, parseState } from "../src/lib/types.ts";
 import { lanesView } from "../src/lib/views.ts";
 
 const raw = JSON.parse(fs.readFileSync(new URL("../fixtures/state.json", import.meta.url), "utf8"));
@@ -63,12 +63,29 @@ test("the recorded needs and events fit the contract; a retyped field breaks it,
   assert.throws(() => parseEvents(e), /events broke the contract at list\[0\]\.data$/);
 });
 
+test("#16: the recorded lessons and digest fit the contract; a retyped field breaks it, naming it", () => {
+  const l = JSON.parse(fs.readFileSync(new URL("../fixtures/lessons.json", import.meta.url), "utf8"));
+  assert.ok(parseLessons(l).fleets.length > 0);
+  l.fleets[0].last = { issue: 31, ts: 1, state: "merged" };
+  assert.equal(parseLessons(l).fleets[0].last?.state, "merged");
+  l.fleets[0].last.state = 1;
+  assert.throws(() => parseLessons(l), /lessons broke the contract at fleets\[0\]\.last\.state$/);
+  l.fleets[0].last = null;
+  l.fleets[1].next = "soon";
+  assert.throws(() => parseLessons(l), /at fleets\[1\]\.next$/);
+  const d = JSON.parse(fs.readFileSync(new URL("../fixtures/digest.json", import.meta.url), "utf8"));
+  assert.match(parseDigest(d).text, /^# Lessons digest: /);
+  assert.throws(() => parseDigest({ ...d, text: null }), /lessons\/<fleet>\/digest broke the contract at text$/);
+});
+
 test("a verify lane shows under its own role, like rev", () => {
   const lane = (name: string, role: string) => ({ ...raw.lanes[0], name, role });
   const s = parseState({ ...raw, lanes: [lane("f-impl-1", "impl"), lane("f-rev-1", "rev"), lane("f-verify-1", "verify"), lane("f-impl-2", "impl")] });
   assert.deepEqual(lanesView(s).map((x) => [x.title, x.items.map((l) => l.text.split(" ")[0])]), [
     ["impl", ["f-impl-1", "f-impl-2"]], ["rev", ["f-rev-1"]], ["verify", ["f-verify-1"]],
   ]);
+  const t = parseState({ ...raw, lanes: [lane("f-impl-1", "impl"), lane("f-lesson-40", "lesson")] });
+  assert.deepEqual(lanesView(t).map((x) => x.title), ["impl", "lesson"], "#16: the lesson lane, too");
 });
 
 test("lanes and asks link across tabs, and the link's hash routes back", () => {
