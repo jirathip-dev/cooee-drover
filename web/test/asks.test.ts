@@ -12,6 +12,8 @@ import { must } from "./must.ts";
 const fixture = (f: string) => JSON.parse(fs.readFileSync(new URL(`../fixtures/${f}.json`, import.meta.url), "utf8"));
 const raw: NeedsTab = fixture("needs");
 const rawEv: Events = fixture("events");
+// #17: herdsman's newest closed ask of each ending it has logged, and each one's `needs-decision`.
+const rawEnd: Events = fixture("endings");
 
 type Post = { path: string; f: Record<string, string> };
 const OK = '{"ok":true,"code":"OK","message":"done"}';
@@ -23,8 +25,13 @@ function herdsman(
   imgs: Record<string, string> = {},
 ) {
   const posts: Post[] = [],
-    gets: string[] = [];
+    gets: string[] = [],
+    live: [string, (e: { event: string; data: string }) => unknown][] = [];
   (globalThis as { cooee?: unknown }).cooee = {
+    events(path: string, on: (e: { event: string; data: string }) => unknown) {
+      live.push([path, on]);
+      return () => {};
+    },
     async fetch(path: string, init?: { method?: string; type?: string; body?: string }) {
       const answer = (text: string, status = 200) => ({ status, ok: status === 200, type: "application/json", text });
       if (init?.method === "POST") {
@@ -45,7 +52,9 @@ function herdsman(
       return path in imgs ? answer(imgs[path] ?? "") : answer("no such image", 404);
     },
   };
-  return { posts, gets };
+  // An SSE message on each stream drover opened, awaited.
+  const emit = (event: string, data: string) => Promise.all(live.map(([, on]) => on({ event, data })));
+  return { posts, gets, live, emit };
 }
 
 const text = (e: Kid): string => (typeof e === "string" ? e : e.k.map(text).join(""));
@@ -383,4 +392,86 @@ test("71: an answer herdsman couldn't deliver shows as a red undelivered line; a
   const v = await open();
   const lines = v.els().filter((x) => x.a.class === "r" && text(x).startsWith("undelivered"));
   assert.deepEqual(lines.map(text), ["undelivered: fleet-1 #4 answer-undelivered: q9"]);
+});
+
+// #17 herdsman#584: the recorded endings after the recorded events, in their order (the tab reads the newest 500).
+const top = Math.max(...rawEv.list.map((e) => e.seq));
+const later = (list: Ev[]) => list.map((e, i) => ({ ...structuredClone(e), seq: top + 1 + i }));
+const of = (type: string, f: (e: Ev) => boolean = () => true) =>
+  must(
+    rawEnd.list.find((e) => e.type === type && f(e)),
+    type,
+  );
+// herdsman's log has logged no typed answer or withdrawal yet: the recorded answer, as `answer --typed` and
+// `ask withdraw --for` log them (herdsman#584's `by: owner (typed)`, `for`).
+const answered = of("decision", (e) => !e.data.to);
+const typed = { ...structuredClone(answered), data: { ...answered.data, id: "q900", by: "owner (typed)" } };
+const withdrawn = {
+  ...structuredClone(answered),
+  type: "ask-withdrawn",
+  data: { id: "q901", by: "conductor-t42", for: "q902" },
+};
+const asked = (id: string): Ev => {
+  const e = structuredClone(of("needs-decision"));
+  return { ...e, fleet: answered.fleet, data: { ...e.data, id } };
+};
+
+test("#17: each ended ask is no needs-you card and no choose dot; the tab shows its ending", async () => {
+  const ends = [...rawEnd.list, asked("q900"), typed, asked("q901"), withdrawn];
+  herdsman(needs({ asks: [askOf("q1")] }), undefined, [...rawEv.list, ...later(ends)]);
+  const v = await open();
+  assert.equal(v.cards().length, 1);
+  assert.equal(v.badge(), "1");
+  assert.match(text(v.card(0)), /q1|question text/);
+  assert.doesNotMatch(v.all(), /choose/);
+  const lines = v
+    .els()
+    .filter((x) => x.a.class === "m" && text(x).startsWith("ended: "))
+    .map(text);
+  assert.deepEqual(lines, [
+    "ended: fleet-2 q901 withdrawn → q902 · question text",
+    "ended: fleet-2 q900 answered by owner (typed) · question text",
+    "ended: fleet-2 q825 answered by owner · question text",
+    "ended: fleet-2 q807 failed · question text",
+    "ended: fleet-2 q803 delivered to t27 · question text",
+  ]);
+  for (const e of ends) assert.ok(!v.cards().some((c) => text(c).includes(`${e.data.id}`)), `${e.data.id} has a card`);
+});
+
+test("#17: the recorded expired and delivered asks read their ending", async () => {
+  herdsman(needs({ asks: [] }), undefined, [...rawEv.list, ...later(rawEnd.list.slice(0, 4))]);
+  const v = await open();
+  assert.equal(v.cards().length, 0);
+  assert.match(v.all(), /ended: fleet-2 q651 expired · question text/);
+  assert.match(v.all(), /ended: fleet-1 q605 delivered to t17 · question text/);
+});
+
+test("#17: an open ask from a live lane older than 24 h is still a card", async () => {
+  const old = askOf("q9", { ts: raw.now - 2 * 86400 }, { who: "fleet-1 · #3075 · fleet-1-impl-3075 · 2d" });
+  herdsman(needs({ asks: [old] }));
+  const v = await open(mem(), { t: raw.now });
+  assert.equal(v.cards().length, 1);
+  assert.match(text(v.card(0)), /fleet-1-impl-3075 · 2d/);
+});
+
+test("#17: an ask-expired event on herdsman's /live takes the card away without a reload", async () => {
+  const expired = of("ask-expired");
+  const n = needs({ asks: [askOf(String(expired.data.id), {}, { who: "fleet-2 · t22 · 1d" })] });
+  const list = [...rawEv.list, ...later([of("needs-decision", (e) => e.data.id === expired.data.id)])];
+  const h = herdsman(n, undefined, list);
+  const v = await open();
+  v.t.listen();
+  assert.deepEqual(
+    h.live.map(([p]) => p),
+    ["/live"],
+  );
+  assert.equal(v.cards().length, 1);
+  // herdsman's check logs the expiry: `needs` drops the ask, `/live` sends the event's moment.
+  n.asks = [];
+  const e = { ...structuredClone(expired), seq: top + 2 };
+  list.push(e);
+  await h.emit("ev", JSON.stringify({ seq: e.seq, ts: e.ts, k: null, f: e.fleet, n: null }));
+  assert.equal(v.cards().length, 0);
+  assert.equal(v.badge(), "0");
+  assert.match(v.all(), /ended: fleet-2 q651 expired/);
 });

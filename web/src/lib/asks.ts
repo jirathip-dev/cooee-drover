@@ -2,7 +2,8 @@
 // tests tap it under node. The count badge, then each open ask (its routine/owner line, a design's PNGs, options
 // recommended first and a free-text box), each blocked lane's card (a permission prompt's reason, command, auto-deny
 // countdown and menu), each `needs-human` issue (verdict, screenshots, merge anyway / one more round / park), the
-// [later] fold, and the answers herdsman logged `answer-undelivered`.
+// [later] fold, the answers herdsman logged `answer-undelivered`, and #17 the last asks it closed with their ending.
+// An ask is open only while herdsman's `needs` lists it (herdsman#584): this tab keeps no open rule of its own.
 import { events, image, needs, post, uniq } from "./api.ts";
 import { h, type Kid, late, strip } from "./dom.ts";
 import { threadHref } from "./links.ts";
@@ -46,10 +47,32 @@ export function undelivered(list: Ev[], now: number): Ev[] {
   return [...last.values()].filter((e) => e.type === "answer-undelivered" && e.ts + 86400 > now);
 }
 
+// #17 herdsman#584: an ending event's words (`herdsman asks --all`'s), by its type.
+const END = new Map<string, (d: Record<string, unknown>) => string>([
+  ["decision", (d) => (d.to ? `delivered to ${d.to}` : `answered by ${d.by}`)],
+  ["ask-withdrawn", (d) => (d.for ? `withdrawn → ${d.for}` : "withdrawn")],
+  ["ask-delivered", (d) => `delivered to ${d.to}`],
+  ["ask-failed", () => "failed"],
+  ["ask-expired", () => "expired"],
+]);
+const KEEP = /^(answer-|ask-(withdrawn|delivered|failed|expired)$|(needs-)?decision$)/;
+
+/** #17: the asks herdsman closed in `list`, newest first: fleet, id, the ending, the question when read. */
+export function ended(list: Ev[]): string[] {
+  const q = new Map(
+    list.filter((e) => e.type === "needs-decision").map((e) => [`${e.fleet} ${e.data.id}`, e.data.question]),
+  );
+  return [...list].reverse().flatMap((e) => {
+    const end = END.get(e.type),
+      s = q.get(`${e.fleet} ${e.data.id}`);
+    return end ? [`${e.fleet} ${e.data.id} ${end(e.data)}${s ? ` · ${s}` : ""}`] : [];
+  });
+}
+
 /**
  * The tab: `draw` gets the tree after every change; `clock` is the time in seconds, `store` where [later] keeps its
  * cards. `load` reads herdsman's needs and recent events; a tap posts a form op, shows herdsman's answer and reads
- * them again. `tick` redraws while a countdown runs.
+ * them again. `tick` redraws while a countdown runs; #17 `listen` reads them again on each herdsman event (`/live`).
  */
 export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 1000, store = phone()) {
   let d: NeedsTab | null = null,
@@ -72,11 +95,11 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
     });
     try {
       d = await needs();
-      // #143: the answers' delivery tries, from the newest 500 events on, then only the new ones.
+      // #143: the answers' delivery tries (#17 and the asks' endings), from the newest 500 events on, then the new ones.
       if (since < 0) since = Math.max(0, (await events(0)).seq - 500);
       const e = await events(since);
       if (!e.refresh) {
-        tries = uniq([...tries, ...e.list.filter((x) => x.type.startsWith("answer-"))], (x) => x.seq);
+        tries = uniq([...tries, ...e.list.filter((x) => KEEP.test(x.type))], (x) => x.seq);
         since = e.seq;
       }
       at = clock();
@@ -309,10 +332,31 @@ export function asksTab(draw: (kids: Kid[]) => void, clock = () => Date.now() / 
       off.length === 0 && on.length > 1 && h("p", {}, h("button", { on: hide(on) }, "later all")),
       ...(unfold ? cards : on).map(card),
       !cards.length && h("p", { class: "m" }, "nothing needs you"),
+      ...ended(tries)
+        .slice(0, 5)
+        .map((l) => h("p", { class: "m" }, `ended: ${l}`)),
     ).k;
   };
   const tick = () => d?.blocked.some((b) => b.menu?.countdown != null) && redraw();
-  return { load, tick };
+  // #17: one read at a time; events while it runs make one more.
+  let busy: Promise<void> | null = null,
+    again = false;
+  const live = (): Promise<void> => {
+    if (busy) {
+      again = true;
+      return busy;
+    }
+    busy = load().finally(() => {
+      busy = null;
+      if (again) {
+        again = false;
+        live();
+      }
+    });
+    return busy;
+  };
+  const listen = () => cooee.events("/live", (e) => (e.event === "ev" || e.event === "refresh") && live());
+  return { load, tick, listen };
 }
 
 export const CSS = `
