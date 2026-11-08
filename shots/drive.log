@@ -1,0 +1,40 @@
+unpaired / -> /pair
+paired -> /
+390 queue ok
+390 queue-issue ok
+390 queue-op ok
+390 lanes ok
+390 lane roles: ["other","design","impl"]
+390 asks ok
+390 fleets ok
+390 fleets-lessons ok
+390 h2s: ["FLEETS · 3 repos · config path text","CHAT DEFAULTS","LESSONS · weekly lesson runs","HOSTS FOR LANES","FLEET DISK","NOTIFIERS · global · edit fleet.toml","ACTIVITY · 3 rows"]
+390 lesson rows: ["fleet-1 weekly · never run · first run due nov 12 Run lessonsdigest","fleet-2 weekly · never run · first run due nov 12 Run lessonsdigest","fleet-3 weekly · never run · first run due nov 13 Run lessonsdigest","minimain words text · 22 lanes","air words text · 0 lanes on","worktrees ▕██████░░░░░░▏ 38.9 GB of 80 GB budget · walked 2m ago","web push · default events"]
+390 error lines: []
+390 fleets-digest ok
+390 digest head: "# Lessons digest: fleet-1, last 7 days\n\n## Review FAIL findings (blocking, with proof)\n\n#8"
+390 digest pressed: true
+390 digest closed on second tap: pre.dg count 0
+390 fleets-run-confirm ok
+390 fleets-run-answer ok
+390 answer: "READ_ONLY: the fixture herdsman takes no ops"
+390 fleets-config ok
+1440 queue ok
+1440 queue-issue ok
+1440 queue-op ok
+1440 lanes ok
+1440 lane roles: ["other","design","impl"]
+1440 asks ok
+1440 fleets ok
+1440 fleets-lessons ok
+1440 h2s: ["FLEETS · 3 repos · config path text","CHAT DEFAULTS","LESSONS · weekly lesson runs","HOSTS FOR LANES","FLEET DISK","NOTIFIERS · global · edit fleet.toml","ACTIVITY · 3 rows"]
+1440 lesson rows: ["fleet-1 weekly · never run · first run due nov 12 Run lessonsdigest","fleet-2 weekly · never run · first run due nov 12 Run lessonsdigest","fleet-3 weekly · never run · first run due nov 13 Run lessonsdigest","minimain words text · 22 lanes","air words text · 0 lanes on","worktrees ▕██████░░░░░░▏ 38.9 GB of 80 GB budget · walked 2m ago","web push · default events"]
+1440 error lines: []
+1440 fleets-digest ok
+1440 digest head: "# Lessons digest: fleet-1, last 7 days\n\n## Review FAIL findings (blocking, with proof)\n\n#8"
+1440 digest pressed: true
+1440 digest closed on second tap: pre.dg count 0
+1440 fleets-run-confirm ok
+1440 fleets-run-answer ok
+1440 answer: "READ_ONLY: the fixture herdsman takes no ops"
+1440 fleets-config ok
