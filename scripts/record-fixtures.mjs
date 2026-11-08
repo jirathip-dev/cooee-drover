@@ -4,7 +4,9 @@
 // are replaced; `host`'s push key, devices, subscriptions and accounts emptied. herdsman#576: a queue card keeps the
 // marks of its kept rows; `issue` is the first queued row with a verdict (a repro one first, else the first row), its
 // findings replaced and a `Repro:` block's text kept to its shape (#15). #16: `lessons`, and the first fleet's 7-day
-// `digest` with only its headings kept.
+// `digest` with only its headings kept. #17 herdsman#584: `endings`, the newest closed ask of each ending (answered,
+// typed, delivered, withdrawn, failed, expired) and its `needs-decision`, read back through the whole log; ids, `by`,
+// `for` and `to` kept.
 import fs from "node:fs";
 
 const base = process.argv[2] ?? "http://127.0.0.1:7777";
@@ -49,3 +51,24 @@ for (const [path, file] of [["state", "state"], ["queue", "queue"], ["needs", "n
   fs.writeFileSync(out, JSON.stringify(json, null, 2) + "\n");
   console.log(`recorded ${file}`);
 }
+
+// #17: an ending's kind; the log read back 500 at a time until each has one, then each one's ask.
+const kind = (e) => e.type === "decision" ? (e.data.to ? "delivered" : e.data.by === "owner (typed)" ? "typed" : "answered")
+  : /^ask-(withdrawn|delivered|failed|expired)$/.test(e.type) ? e.type : null;
+const KINDS = ["answered", "typed", "delivered", "ask-withdrawn", "ask-delivered", "ask-failed", "ask-expired"];
+const ends = new Map(), asks = new Map();
+for (let u = state.seq; u > 0 && (ends.size < KINDS.length || [...ends.values()].some((e) => !asks.has(`${e.fleet} ${e.data.id}`))); u -= 500) {
+  const list = (await read(`events?since=${Math.max(0, u - 500)}&until=${u}`)).list.reverse();
+  for (const e of list) if (kind(e) && !ends.has(kind(e))) ends.set(kind(e), e);
+  for (const e of list) if (e.type === "needs-decision" && [...ends.values()].some((x) => x.fleet === e.fleet && x.data.id === e.data.id)) asks.set(`${e.fleet} ${e.data.id}`, e);
+}
+for (const k of KINDS) if (!ends.has(k)) console.log(`endings: herdsman's log has no ${k}`);
+const KEEP = new Set(["id", "by", "for", "to", "key", "agent", "thread", "kind", "recommend", "via"]);
+const fake = (s) => longest.reduce((t, [real, f]) => t.replaceAll(real, f), s);
+const scrubbed = (e) => ({ ...e, fleet: fleets.get(e.fleet) ?? e.fleet, text: `${e.type} text`, plain: `${e.type} text`,
+  // A handoff card's object stays (herdsman reads its presence), emptied; the options keep their count.
+  data: Object.fromEntries(Object.entries(e.data).map(([k, x]) => [k, Array.isArray(x) ? x.map(() => `${k} text`)
+    : x && typeof x === "object" ? {} : typeof x !== "string" ? x : KEEP.has(k) ? fake(x) : `${k} text`])) });
+const list = [...asks.values(), ...ends.values()].sort((a, b) => a.seq - b.seq).map(scrubbed);
+fs.writeFileSync(new URL("../web/fixtures/endings.json", import.meta.url), JSON.stringify({ seq: state.seq, refresh: false, list }, null, 2) + "\n");
+console.log("recorded endings");

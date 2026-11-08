@@ -89,6 +89,18 @@ test("the recorded needs and events fit the contract; a retyped field breaks it,
   assert.throws(() => parseEvents(e), /events broke the contract at list\[0\]\.data$/);
 });
 
+test("#17: the recorded endings fit the events contract: an ask of each ending herdsman logged, and its ask", () => {
+  const e = parseEvents(JSON.parse(fs.readFileSync(new URL("../fixtures/endings.json", import.meta.url), "utf8")));
+  const kinds = e.list.map((x) => (x.type === "decision" ? (x.data.to ? "decision to" : "decision") : x.type));
+  for (const k of ["decision", "decision to", "ask-delivered", "ask-failed", "ask-expired"])
+    assert.ok(kinds.includes(k), k);
+  for (const x of e.list.filter((x) => x.type !== "needs-decision"))
+    assert.ok(
+      e.list.some((a) => a.type === "needs-decision" && a.data.id === x.data.id && a.seq < x.seq),
+      `${x.data.id}`,
+    );
+});
+
 test("#16: the recorded lessons and digest fit the contract; a retyped field breaks it, naming it", () => {
   const l = JSON.parse(fs.readFileSync(new URL("../fixtures/lessons.json", import.meta.url), "utf8"));
   assert.ok(parseLessons(l).fleets.length > 0);

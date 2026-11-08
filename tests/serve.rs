@@ -196,7 +196,7 @@ fn only_api_v1_takes_a_post() {
 #[test]
 fn the_event_stream_passes_through_as_it_comes() {
     let (more, wait) = mpsc::channel::<()>();
-    let (url, _seen) = herdsman(move |c| {
+    let (url, seen) = herdsman(move |c| {
         c.write_all(
             b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\nid: 1\ndata: {}\n\n",
         )
@@ -205,7 +205,8 @@ fn the_event_stream_passes_through_as_it_comes() {
         c.write_all(b"id: 2\ndata: {}\n\n").unwrap();
     });
     let d = drover(&url);
-    let mut r = BufReader::new(call(&d.1, "/api/v1/events?after=0", Some(&token("queue"))));
+    // #17: herdsman's `/live`, its query kept.
+    let mut r = BufReader::new(call(&d.1, "/live?since=3", Some(&token("asks"))));
     let mut got = String::new();
     while !got.ends_with("id: 1\ndata: {}\n\n") {
         assert!(
@@ -217,6 +218,8 @@ fn the_event_stream_passes_through_as_it_comes() {
     more.send(()).unwrap();
     r.read_to_string(&mut got).unwrap();
     assert!(got.ends_with("id: 2\ndata: {}\n\n"), "{got}");
+    let req = seen.recv().unwrap();
+    assert!(req.starts_with("GET /live?since=3 HTTP/1.0\r\n"), "{req}");
 }
 
 #[test]

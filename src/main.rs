@@ -1,6 +1,7 @@
 //! `cooee-drover`: one backend for drover's four cooee plugins (cooee docs/plugins.md). It serves each plugin's UI
 //! module (`/queue.js`, `/lanes.js`, `/asks.js`, `/fleets.js`) to that plugin's bearer token only, and forwards
-//! `GET /api/v1/*` (JSON or the SSE event stream) and `POST /api/v1/<op>` (a form op) to herdsman for any of them.
+//! `GET /api/v1/*` (JSON), `GET /live` (#17: herdsman's SSE event stream) and `POST /api/v1/<op>` (a form op) to
+//! herdsman for any of them.
 //! It never reads herdsman's files.
 //!
 //! Configuration is the environment: `DROVER_ADDR` (default `127.0.0.1:4810`), `HERDSMAN` (herdsman's base URL,
@@ -170,6 +171,7 @@ fn handle(cfg: &Config, mut c: TcpStream) -> io::Result<()> {
         return reply(&mut c, "401 Unauthorized", "text/plain", "no token");
     };
     let api = path.starts_with("/api/v1/");
+    let live = method == "GET" && path.split('?').next() == Some("/live");
     let cookie = cfg.cookie_line();
     if method == "GET" && (path.starts_with("/design/") || path.starts_with("/shot/")) {
         // herdsman#547: only `/<kind>/<fleet>/<n>/<i>`; a `..`, `%` or extra segment never reaches herdsman.
@@ -203,7 +205,7 @@ fn handle(cfg: &Config, mut c: TcpStream) -> io::Result<()> {
             "GET, or POST to /api/v1/",
         );
     }
-    if api {
+    if api || live {
         let mut body = Vec::new();
         if method == "POST" {
             let n = header("content-length").and_then(|n| n.parse::<u64>().ok());
